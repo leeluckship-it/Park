@@ -1,0 +1,2832 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>도쿄 시바공원 3D 가상 가을 산책 - Tokyo Autumn Park 3D</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Noto Sans KR', 'Inter', sans-serif;
+      background: #1a3a5c;
+    }
+    #canvas-container, #canvas-container canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      touch-action: none;
+    }
+    #labels-container {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      overflow: hidden;
+    }
+    .world-label {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+      white-space: nowrap;
+    }
+    .speech-bubble {
+      position: relative;
+      background: rgba(255, 255, 255, 0.94);
+      color: #1e293b;
+      padding: 5px 11px;
+      border-radius: 14px;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(251, 146, 60, 0.45);
+      margin-bottom: 5px;
+      animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .speech-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 5px 5px 0;
+      border-style: solid;
+      border-color: rgba(255, 255, 255, 0.94) transparent transparent;
+    }
+    @keyframes popIn {
+      0% { transform: scale(0.6); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.68);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+    .action-btn {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .action-btn:hover {
+      transform: translateY(-2px);
+    }
+    .action-btn:active {
+      transform: translateY(0) scale(0.96);
+    }
+    .action-btn.active-state {
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      color: white;
+      border-color: #fdba74;
+      box-shadow: 0 0 18px rgba(249, 115, 22, 0.55);
+    }
+  </style>
+</head>
+<body class="relative w-full h-full overflow-hidden">
+
+  <!-- 3D Viewport -->
+  <div id="canvas-container"></div>
+
+  <!-- 3D Floating Nameplate & Speech Bubble Overlay -->
+  <div id="labels-container"></div>
+
+  <!-- Top HUD: Online Count Badge + Compact Profile, Outfit & Environment Controls -->
+  <header class="fixed top-3 left-3 right-3 z-20 flex flex-col items-start gap-1.5 pointer-events-none">
+    <div class="glass-panel rounded-full px-3 py-1 text-white shadow-lg pointer-events-auto inline-flex items-center gap-1.5">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+      <span id="online-count-badge" class="text-xs font-semibold text-emerald-300">동시접속 4명</span>
+    </div>
+    <div class="glass-panel rounded-2xl px-3 py-2 text-white shadow-xl pointer-events-auto flex flex-wrap items-center gap-1.5 sm:gap-2">
+      <span class="text-xs text-orange-300 font-medium whitespace-nowrap">내 닉네임</span>
+      <input
+        id="nickname-input"
+        type="text"
+        maxlength="10"
+        value="가을소녀"
+        class="bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-orange-400 w-20 sm:w-24"
+        aria-label="내 닉네임"
+      />
+      <button
+        id="outfit-color-btn"
+        type="button"
+        class="px-2.5 py-1 rounded-xl bg-pink-500/85 hover:bg-pink-500 text-xs font-semibold whitespace-nowrap transition"
+        title="캐릭터 코디 색상 변경"
+      >
+        🎀 코디 변경
+      </button>
+      <button
+        id="time-day-btn"
+        type="button"
+        class="px-2.5 py-1 rounded-xl text-xs font-semibold bg-sky-500 text-white shadow whitespace-nowrap transition"
+      >
+        ☀️ 낮
+      </button>
+      <button
+        id="time-sunset-btn"
+        type="button"
+        class="px-2.5 py-1 rounded-xl text-xs font-semibold text-slate-200 hover:bg-white/10 whitespace-nowrap transition"
+      >
+        🌇 노을
+      </button>
+      <button
+        id="sound-toggle-btn"
+        type="button"
+        class="px-2.5 py-1 rounded-xl text-xs font-semibold text-slate-200 hover:bg-white/10 whitespace-nowrap transition"
+        title="가을 공원 환경음 켜기/끄기"
+      >
+        🔇 효과음
+      </button>
+    </div>
+  </header>
+
+  <!-- Left Floating Multiplayer List & Quick Help -->
+  <aside class="fixed top-20 left-3 z-20 hidden md:flex flex-col gap-2 w-60 pointer-events-none">
+    <div class="glass-panel rounded-2xl p-3 text-white shadow-xl pointer-events-auto">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-bold text-orange-300 flex items-center gap-1.5">
+          👥 현재 공원에 있는 사람들
+        </span>
+        <button
+          id="spawn-visitor-btn"
+          type="button"
+          class="text-[11px] px-2 py-0.5 rounded-lg bg-orange-500/30 hover:bg-orange-500/50 border border-orange-400/40 text-orange-200 transition"
+        >
+          + 친구 초대
+        </button>
+      </div>
+      <ul id="player-roster" class="space-y-1.5 text-xs max-h-40 overflow-y-auto pr-1"></ul>
+      <div class="mt-2 pt-2 border-t border-white/10 text-[11px] text-slate-300 leading-relaxed">
+        💡 이 페이지를 <strong class="text-amber-300">새 브라우저 탭/창</strong>에 하나 더 열면 실시간으로 서로의 캐릭터가 함께 움직입니다!
+      </div>
+    </div>
+  </aside>
+
+  <!-- Floating Touch Zoom Controls -->
+  <div class="fixed right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-2 pointer-events-auto">
+    <button
+      id="zoom-in-btn"
+      type="button"
+      class="glass-panel w-10 h-10 rounded-2xl text-white font-bold text-lg shadow-xl flex items-center justify-center hover:bg-white/20 active:scale-95 transition"
+      title="화면 확대 (줌인)"
+      aria-label="줌인"
+    >
+      ＋
+    </button>
+    <button
+      id="zoom-out-btn"
+      type="button"
+      class="glass-panel w-10 h-10 rounded-2xl text-white font-bold text-lg shadow-xl flex items-center justify-center hover:bg-white/20 active:scale-95 transition"
+      title="화면 축소 (줌아웃)"
+      aria-label="줌아웃"
+    >
+      －
+    </button>
+  </div>
+
+  <!-- Toast Notification -->
+  <div
+    id="status-toast"
+    class="fixed top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none opacity-0 transition-opacity duration-300 glass-panel px-4 py-2 rounded-full text-xs font-semibold text-amber-200 shadow-lg"
+  >
+    바닥을 클릭하면 캐릭터가 걸어갑니다 🍂
+  </div>
+
+  <!-- Bottom Action & Auto-Chat Emotes Bar -->
+  <footer class="fixed bottom-4 left-3 right-3 z-20 flex flex-col items-center gap-2 pointer-events-none">
+    <!-- Auto-Chat Emote Buttons -->
+    <div class="glass-panel rounded-2xl px-3 py-1.5 shadow-xl pointer-events-auto flex flex-wrap items-center justify-center gap-1.5">
+      <button type="button" data-emote="👋 안녕하세요! 가을 하늘이 참 예뻐요~" class="emote-btn px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition">👋 인사</button>
+      <button type="button" data-emote="🗼 도쿄타워가 진짜 선명하게 보여요!" class="emote-btn px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition">🗼 타워감상</button>
+      <button type="button" data-emote="🐕 강아지 너무 귀엽다!!" class="emote-btn px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition">🐕 강아지</button>
+      <button type="button" data-emote="🍱 도시락 맛있겠다~" class="emote-btn px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition">🍱 도시락</button>
+    </div>
+
+    <div class="glass-panel rounded-2xl px-3 py-2 shadow-2xl pointer-events-auto flex flex-wrap items-center justify-center gap-2">
+      <button
+        id="btn-read-book"
+        type="button"
+        class="action-btn px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md whitespace-nowrap"
+      >
+        <span>📖</span>
+        <span>책읽기</span>
+      </button>
+
+      <button
+        id="btn-lie-down"
+        type="button"
+        class="action-btn px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md whitespace-nowrap"
+      >
+        <span>☁️</span>
+        <span>눕기</span>
+      </button>
+
+      <button
+        id="btn-sit-bench"
+        type="button"
+        class="action-btn px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-md whitespace-nowrap"
+      >
+        <span>🪑</span>
+        <span>벤치 앉기</span>
+      </button>
+
+      <button
+        id="btn-picnic-mat"
+        type="button"
+        class="action-btn px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-md whitespace-nowrap"
+      >
+        <span>🧺</span>
+        <span>돗자리로 이동</span>
+      </button>
+
+      <button
+        id="btn-stand-walk"
+        type="button"
+        class="action-btn active-state px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-md whitespace-nowrap"
+      >
+        <span>🚶‍♀️</span>
+        <span>산책하기</span>
+      </button>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // ==========================================
+      // 1. SOUND ENGINE (Web Audio API Ambient & Steps)
+      // ==========================================
+      let audioCtx = null;
+      let soundEnabled = false;
+      let birdTimer = null;
+
+      function initAudio() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+      }
+
+      function playChirp() {
+        if (!soundEnabled || !audioCtx) return;
+        try {
+          const now = audioCtx.currentTime;
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          const baseFreq = 2200 + Math.random() * 900;
+          osc.frequency.setValueAtTime(baseFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.35, now + 0.08);
+          osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.9, now + 0.18);
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.03, now + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.24);
+        } catch (e) {}
+      }
+
+      function playPopSound(freq = 520) {
+        if (!soundEnabled || !audioCtx) return;
+        try {
+          const now = audioCtx.currentTime;
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now);
+          osc.frequency.exponentialRampToValueAtTime(freq * 1.4, now + 0.09);
+          gain.gain.setValueAtTime(0.05, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.12);
+        } catch (e) {}
+      }
+
+      // ==========================================
+      // 2. TOAST HELPER
+      // ==========================================
+      const toastEl = document.getElementById('status-toast');
+      let toastTimeout = null;
+      function showToast(msg) {
+        if (!toastEl) return;
+        toastEl.textContent = msg;
+        toastEl.style.opacity = '1';
+        if (toastTimeout) clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => {
+          toastEl.style.opacity = '0';
+        }, 2800);
+      }
+
+      // ==========================================
+      // 3. THREE.JS SCENE, CAMERA, RENDERER
+      // ==========================================
+      const container = document.getElementById('canvas-container');
+      const labelsContainer = document.getElementById('labels-container');
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0xc8e3ff, 0.0024);
+
+      const camera = new THREE.PerspectiveCamera(
+        50,
+        window.innerWidth / window.innerHeight,
+        0.5,
+        900
+      );
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.12;
+      container.appendChild(renderer.domElement);
+
+      // ==========================================
+      // 4. LIGHTING & REALISTIC SKY DOME SHADER
+      // ==========================================
+      const hemiLight = new THREE.HemisphereLight(0x87cefa, 0x7c6a46, 0.72);
+      hemiLight.position.set(0, 120, 0);
+      scene.add(hemiLight);
+
+      const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.35);
+      sunLight.position.set(65, 95, 45);
+      sunLight.castShadow = true;
+      sunLight.shadow.mapSize.width = 2048;
+      sunLight.shadow.mapSize.height = 2048;
+      sunLight.shadow.camera.near = 10;
+      sunLight.shadow.camera.far = 260;
+      const d = 65;
+      sunLight.shadow.camera.left = -d;
+      sunLight.shadow.camera.right = d;
+      sunLight.shadow.camera.top = d;
+      sunLight.shadow.camera.bottom = -d;
+      sunLight.shadow.bias = -0.0005;
+      scene.add(sunLight);
+
+      // Rim fill light for warm autumn foliage glow
+      const autumnFillLight = new THREE.DirectionalLight(0xff9e5e, 0.4);
+      autumnFillLight.position.set(-50, 30, -80);
+      scene.add(autumnFillLight);
+
+      // Realistic Atmospheric Sky Shader Dome
+      const skyUniforms = {
+        topColor: { value: new THREE.Color(0x1358be) },
+        midColor: { value: new THREE.Color(0x4ea6ff) },
+        horizonColor: { value: new THREE.Color(0xdaf0ff) },
+        sunDirection: { value: new THREE.Vector3(0.45, 0.55, -0.7).normalize() },
+        sunColor: { value: new THREE.Color(0xfff6d6) }
+      };
+
+      const skyGeo = new THREE.SphereGeometry(480, 48, 32);
+      const skyMat = new THREE.ShaderMaterial({
+        uniforms: skyUniforms,
+        side: THREE.BackSide,
+        depthWrite: false,
+        vertexShader: `
+          varying vec3 vWorldPosition;
+          void main() {
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * viewMatrix * worldPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 topColor;
+          uniform vec3 midColor;
+          uniform vec3 horizonColor;
+          uniform vec3 sunDirection;
+          uniform vec3 sunColor;
+          varying vec3 vWorldPosition;
+          void main() {
+            vec3 dir = normalize(vWorldPosition);
+            float h = clamp(dir.y, 0.0, 1.0);
+            vec3 col = mix(horizonColor, midColor, pow(h, 0.42));
+            col = mix(col, topColor, pow(h, 1.35));
+            float sunAmt = max(dot(dir, sunDirection), 0.0);
+            col += sunColor * pow(sunAmt, 24.0) * 0.45;
+            col += sunColor * smoothstep(0.996, 0.9995, sunAmt) * 1.2;
+            gl_FragColor = vec4(col, 1.0);
+          }
+        `
+      });
+      const skyDome = new THREE.Mesh(skyGeo, skyMat);
+      scene.add(skyDome);
+
+      // Fluffy 3D & Soft Layered Clouds in the Blue Sky
+      const cloudsGroup = new THREE.Group();
+      scene.add(cloudsGroup);
+
+      function createCloudCluster(x, y, z, scale) {
+        const group = new THREE.Group();
+        const cloudMat = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          roughness: 0.95,
+          metalness: 0.0,
+          emissive: 0xdbeafe,
+          emissiveIntensity: 0.18
+        });
+        const puffPositions = [
+          [0, 0, 0, 5.2],
+          [4.2, -0.4, 0.8, 4.1],
+          [-4.4, -0.5, -0.5, 4.3],
+          [2.1, 1.8, -0.6, 3.8],
+          [-2.0, 1.5, 0.7, 3.6],
+          [7.4, -1.1, 0.2, 3.0],
+          [-7.6, -1.0, 0.3, 3.1]
+        ];
+        puffPositions.forEach(([px, py, pz, r]) => {
+          const geo = new THREE.SphereGeometry(r, 16, 14);
+          geo.scale(1.35, 0.72, 1.0);
+          const puff = new THREE.Mesh(geo, cloudMat);
+          puff.position.set(px, py, pz);
+          group.add(puff);
+        });
+        group.position.set(x, y, z);
+        group.scale.setScalar(scale);
+        group.userData = { speed: 0.6 + Math.random() * 0.9, baseX: x };
+        cloudsGroup.add(group);
+      }
+
+      const cloudSeeds = [
+        [-110, 88, -190, 2.2],
+        [-35, 102, -220, 2.6],
+        [55, 92, -180, 2.0],
+        [135, 96, -210, 2.5],
+        [-150, 78, -120, 1.7],
+        [110, 82, -110, 1.8],
+        [0, 115, -145, 2.1],
+        [-75, 95, -80, 1.4],
+        [80, 100, -60, 1.5]
+      ];
+      cloudSeeds.forEach(c => createCloudCluster(c[0], c[1], c[2], c[3]));
+
+      // ==========================================
+      // 5. PROCEDURAL HIGH-RES TEXTURES
+      // ==========================================
+      function createGrassAutumnTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Rich Shiba Park autumn lawn base
+        ctx.fillStyle = '#4d7c3f';
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Grass blades & warm autumn patches
+        for (let i = 0; i < 9000; i++) {
+          const x = Math.random() * 512;
+          const y = Math.random() * 512;
+          const tones = ['#3f6a34', '#588947', '#68934a', '#7c8f46', '#467339'];
+          ctx.fillStyle = tones[i % tones.length];
+          ctx.fillRect(x, y, 2, 4);
+        }
+
+        // Fallen ginkgo & maple leaves on the grass
+        const leafColors = ['#eab308', '#f97316', '#dc2626', '#f59e0b', '#b91c1c'];
+        for (let i = 0; i < 420; i++) {
+          ctx.fillStyle = leafColors[i % leafColors.length];
+          ctx.beginPath();
+          ctx.arc(Math.random() * 512, Math.random() * 512, 1.2 + Math.random() * 2.0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(22, 22);
+        return tex;
+      }
+
+      function createStonePathTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#d6cfc2';
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Subtle stone tile pattern
+        ctx.strokeStyle = '#b8b0a2';
+        ctx.lineWidth = 2;
+        for (let y = 0; y < 256; y += 32) {
+          for (let x = 0; x < 256; x += 64) {
+            const offset = (y / 32) % 2 === 0 ? 0 : 32;
+            ctx.strokeRect((x + offset) % 256, y, 64, 32);
+          }
+        }
+        for (let i = 0; i < 1500; i++) {
+          ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+          ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+        }
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(4, 24);
+        return tex;
+      }
+
+      function createPicnicPatternTexture(primaryHex, secondaryHex) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fffdf9';
+        ctx.fillRect(0, 0, 256, 256);
+
+        ctx.fillStyle = primaryHex;
+        for (let i = 0; i < 256; i += 32) {
+          ctx.fillRect(i, 0, 16, 256);
+        }
+        ctx.fillStyle = secondaryHex;
+        for (let j = 0; j < 256; j += 32) {
+          ctx.fillRect(0, j, 256, 16);
+        }
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(2, 2);
+        return tex;
+      }
+
+      function createBuildingWindowTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#3b526b';
+        ctx.fillRect(0, 0, 128, 256);
+
+        for (let y = 8; y < 248; y += 12) {
+          for (let x = 8; x < 120; x += 14) {
+            const skyReflect = Math.random() > 0.25;
+            ctx.fillStyle = skyReflect ? '#7eb8da' : '#fef3c7';
+            ctx.fillRect(x, y, 9, 7);
+          }
+        }
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        return tex;
+      }
+
+      // ==========================================
+      // 6. PARK GROUND, PATHS &clickable TARGETS
+      // ==========================================
+      const walkableMeshes = [];
+      const interactiveBenches = [];
+      const interactiveMats = [];
+
+      // Main Park Lawn
+      const groundGeo = new THREE.CircleGeometry(180, 64);
+      const groundMat = new THREE.MeshStandardMaterial({
+        map: createGrassAutumnTexture(),
+        roughness: 0.92,
+        metalness: 0.02
+      });
+      const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+      groundMesh.rotation.x = -Math.PI / 2;
+      groundMesh.receiveShadow = true;
+      groundMesh.name = 'park_ground';
+      scene.add(groundMesh);
+      walkableMeshes.push(groundMesh);
+
+      // Central Promenade Path leading toward the Tokyo Tower view
+      const pathMat = new THREE.MeshStandardMaterial({
+        map: createStonePathTexture(),
+        roughness: 0.85
+      });
+      const mainPath = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 76), pathMat);
+      mainPath.rotation.x = -Math.PI / 2;
+      mainPath.position.set(0, 0.02, -4);
+      mainPath.receiveShadow = true;
+      scene.add(mainPath);
+      walkableMeshes.push(mainPath);
+
+      // Cross Path across the lawn
+      const crossPath = new THREE.Mesh(new THREE.PlaneGeometry(66, 4.2), pathMat);
+      crossPath.rotation.x = -Math.PI / 2;
+      crossPath.position.set(0, 0.021, 4);
+      crossPath.receiveShadow = true;
+      scene.add(crossPath);
+      walkableMeshes.push(crossPath);
+
+      // Click Indicator Ring on Ground
+      const clickMarkerGroup = new THREE.Group();
+      const ringGeo = new THREE.RingGeometry(0.45, 0.65, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xf97316,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.0
+      });
+      const clickRing = new THREE.Mesh(ringGeo, ringMat);
+      clickRing.rotation.x = -Math.PI / 2;
+      clickMarkerGroup.add(clickRing);
+      clickMarkerGroup.position.y = 0.05;
+      scene.add(clickMarkerGroup);
+      let clickMarkerAlpha = 0;
+
+      // ==========================================
+      // 7. REALISTIC TOKYO TOWER & SKYLINE IN BACKGROUND
+      // ==========================================
+      const tokyoTowerLights = [];
+      function buildRealisticTokyoTower() {
+        const towerGroup = new THREE.Group();
+        // Placed behind the distant road & forest, towering majestically like from Shiba Park
+        towerGroup.position.set(0, 0, -142);
+
+        const intlOrangeMat = new THREE.MeshStandardMaterial({
+          color: 0xec3b18, // Authentic Tokyo Tower International Orange
+          roughness: 0.38,
+          metalness: 0.45
+        });
+        const whiteSteelMat = new THREE.MeshStandardMaterial({
+          color: 0xf8fafc,
+          roughness: 0.38,
+          metalness: 0.42
+        });
+        const deckBodyMat = new THREE.MeshStandardMaterial({
+          color: 0xf1f5f9,
+          roughness: 0.3,
+          metalness: 0.3
+        });
+        const deckGlassMat = new THREE.MeshStandardMaterial({
+          color: 0x1e293b,
+          roughness: 0.1,
+          metalness: 0.85,
+          emissive: 0xfef08a,
+          emissiveIntensity: 0.35
+        });
+
+        // Base FootTown Building
+        const footTown = new THREE.Mesh(
+          new THREE.BoxGeometry(28, 7, 28),
+          new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 })
+        );
+        footTown.position.y = 3.5;
+        towerGroup.add(footTown);
+
+        // Tower parabolic profile helper: returns half-width at height y (0 to 105)
+        function getHalfWidth(y) {
+          const t = Math.min(Math.max(y / 105, 0), 1);
+          return 12.5 * Math.pow(1 - t, 1.55) + 1.35;
+        }
+
+        // 14 vertical tiers with authentic 7 alternating white/orange bands
+        const tiers = [
+          { y0: 0, y1: 8, mat: intlOrangeMat },
+          { y0: 8, y1: 16, mat: intlOrangeMat },
+          { y0: 16, y1: 24, mat: whiteSteelMat },
+          { y0: 24, y1: 31, mat: whiteSteelMat },
+          { y0: 31, y1: 39, mat: intlOrangeMat },
+          { y0: 39, y1: 46, mat: intlOrangeMat },
+          { y0: 46, y1: 54, mat: whiteSteelMat },
+          { y0: 54, y1: 62, mat: intlOrangeMat },
+          { y0: 62, y1: 70, mat: whiteSteelMat },
+          { y0: 70, y1: 78, mat: intlOrangeMat },
+          { y0: 78, y1: 86, mat: whiteSteelMat },
+          { y0: 86, y1: 95, mat: intlOrangeMat },
+          { y0: 95, y1: 105, mat: whiteSteelMat }
+        ];
+
+        function makeStrut(p1, p2, radius, material) {
+          const dir = new THREE.Vector3().subVectors(p2, p1);
+          const len = dir.length();
+          const geo = new THREE.CylinderGeometry(radius, radius, len, 6);
+          const mesh = new THREE.Mesh(geo, material);
+          mesh.position.copy(p1).add(p2).multiplyScalar(0.5);
+          mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+          return mesh;
+        }
+
+        tiers.forEach((tier, idx) => {
+          const w0 = getHalfWidth(tier.y0);
+          const w1 = getHalfWidth(tier.y1);
+          const mat = tier.mat;
+          const legRadius = Math.max(0.22, 0.55 - idx * 0.025);
+          const braceRadius = legRadius * 0.52;
+
+          const c0 = [
+            new THREE.Vector3(-w0, tier.y0, -w0),
+            new THREE.Vector3(w0, tier.y0, -w0),
+            new THREE.Vector3(w0, tier.y0, w0),
+            new THREE.Vector3(-w0, tier.y0, w0)
+          ];
+          const c1 = [
+            new THREE.Vector3(-w1, tier.y1, -w1),
+            new THREE.Vector3(w1, tier.y1, -w1),
+            new THREE.Vector3(w1, tier.y1, w1),
+            new THREE.Vector3(-w1, tier.y1, w1)
+          ];
+
+          for (let i = 0; i < 4; i++) {
+            const next = (i + 1) % 4;
+            // Corner main column
+            towerGroup.add(makeStrut(c0[i], c1[i], legRadius, mat));
+            // Top horizontal beam
+            towerGroup.add(makeStrut(c1[i], c1[next], braceRadius * 1.15, mat));
+            // X-bracing diagonals on each face
+            towerGroup.add(makeStrut(c0[i], c1[next], braceRadius, mat));
+            towerGroup.add(makeStrut(c0[next], c1[i], braceRadius, mat));
+            // Mid-tier horizontal + K-truss for lower wide sections
+            if (idx < 6) {
+              const midA = c0[i].clone().lerp(c1[i], 0.5);
+              const midB = c0[next].clone().lerp(c1[next], 0.5);
+              towerGroup.add(makeStrut(midA, midB, braceRadius * 0.85, mat));
+            }
+          }
+        });
+
+        // Main Observation Deck (150m level -> y = 39)
+        const mainDeckGroup = new THREE.Group();
+        mainDeckGroup.position.y = 39;
+        const deckLower = new THREE.Mesh(new THREE.BoxGeometry(15.2, 3.2, 15.2), deckBodyMat);
+        const deckWindows1 = new THREE.Mesh(new THREE.BoxGeometry(15.5, 1.8, 15.5), deckGlassMat);
+        deckWindows1.position.y = 0.2;
+        const deckUpper = new THREE.Mesh(new THREE.BoxGeometry(16.4, 3.0, 16.4), intlOrangeMat);
+        deckUpper.position.y = 3.1;
+        const deckWindows2 = new THREE.Mesh(new THREE.BoxGeometry(16.7, 1.6, 16.7), deckGlassMat);
+        deckWindows2.position.y = 3.1;
+        mainDeckGroup.add(deckLower, deckWindows1, deckUpper, deckWindows2);
+        towerGroup.add(mainDeckGroup);
+
+        // Top Deck (250m level -> y = 84)
+        const topDeckGroup = new THREE.Group();
+        topDeckGroup.position.y = 84;
+        const topPod = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.8, 3.6, 8), deckBodyMat);
+        const topGlass = new THREE.Mesh(new THREE.CylinderGeometry(4.0, 4.0, 1.7, 8), deckGlassMat);
+        const dishRing = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.1, 1.4, 12), whiteSteelMat);
+        dishRing.position.y = -2.5;
+        topDeckGroup.add(topPod, topGlass, dishRing);
+        towerGroup.add(topDeckGroup);
+
+        // Pinnacle Antenna Spire (y = 105 to 132)
+        const spireSegments = [
+          { y: 108, h: 6, r: 0.9, mat: intlOrangeMat },
+          { y: 114, h: 6, r: 0.7, mat: whiteSteelMat },
+          { y: 120, h: 6, r: 0.5, mat: intlOrangeMat },
+          { y: 126, h: 6, r: 0.32, mat: whiteSteelMat },
+          { y: 131, h: 4, r: 0.16, mat: intlOrangeMat }
+        ];
+        spireSegments.forEach(s => {
+          const seg = new THREE.Mesh(new THREE.CylinderGeometry(s.r * 0.8, s.r, s.h, 12), s.mat);
+          seg.position.y = s.y;
+          towerGroup.add(seg);
+        });
+
+        // Aviation Red Beacons & Warm Tower Illumination
+        const beaconMat = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+        [43, 86, 133].forEach(by => {
+          const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.65, 10, 10), beaconMat);
+          beacon.position.y = by;
+          towerGroup.add(beacon);
+          tokyoTowerLights.push(beacon);
+        });
+
+        const towerGlowLight = new THREE.PointLight(0xff7b29, 0.8, 140);
+        towerGlowLight.position.set(0, 55, 16);
+        towerGroup.add(towerGlowLight);
+        tokyoTowerLights.push(towerGlowLight);
+
+        scene.add(towerGroup);
+      }
+      buildRealisticTokyoTower();
+
+      // Realistic Distant Tokyo Skyline Buildings (Minato-ku / Roppongi / Azabudai Hills)
+      function buildTokyoSkyline() {
+        const skylineGroup = new THREE.Group();
+        const winTex = createBuildingWindowTexture();
+
+        const buildingConfigs = [
+          [-145, 58, -165, 22, 58, 22, 0x475569],
+          [-115, 76, -175, 26, 76, 24, 0x334155],
+          [-82, 48, -155, 20, 48, 20, 0x64748b],
+          [-52, 64, -168, 22, 64, 22, 0x475569],
+          [52, 68, -168, 24, 68, 22, 0x3b4c63],
+          [85, 52, -155, 20, 52, 20, 0x52637a],
+          [118, 84, -178, 28, 84, 26, 0x334155], // Tall Azabudai-style glass tower
+          [152, 55, -162, 22, 55, 22, 0x475569],
+          [-175, 42, -145, 20, 42, 20, 0x64748b],
+          [182, 45, -148, 20, 45, 20, 0x64748b]
+        ];
+
+        buildingConfigs.forEach(([x, h, z, w, height, d, colorHex]) => {
+          const mat = new THREE.MeshStandardMaterial({
+            color: colorHex,
+            map: winTex,
+            roughness: 0.35,
+            metalness: 0.5
+          });
+          const bldg = new THREE.Mesh(new THREE.BoxGeometry(w, height, d), mat);
+          bldg.position.set(x, height / 2, z);
+          skylineGroup.add(bldg);
+
+          // Rooftop crown & red aviation light
+          const crown = new THREE.Mesh(
+            new THREE.BoxGeometry(w * 0.7, 3, d * 0.7),
+            new THREE.MeshStandardMaterial({ color: 0x1e293b })
+          );
+          crown.position.set(x, height + 1.5, z);
+          skylineGroup.add(crown);
+        });
+        scene.add(skylineGroup);
+      }
+      buildTokyoSkyline();
+
+      // ==========================================
+      // 8. DISTANT CITY ROAD & MOVING CARS
+      // ==========================================
+      const movingCars = [];
+      function buildDistantRoadAndTraffic() {
+        const roadGroup = new THREE.Group();
+        const roadZ = -66; // Visible beyond the park paths & framed through the autumn forest
+
+        // Asphalt Roadway
+        const roadGeo = new THREE.PlaneGeometry(340, 14);
+        const roadMat = new THREE.MeshStandardMaterial({
+          color: 0x2b303a,
+          roughness: 0.85,
+          metalness: 0.1
+        });
+        const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+        roadMesh.rotation.x = -Math.PI / 2;
+        roadMesh.position.set(0, 0.04, roadZ);
+        roadMesh.receiveShadow = true;
+        roadGroup.add(roadMesh);
+
+        // Concrete Curbs & Guardrails
+        const curbMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.7 });
+        const frontCurb = new THREE.Mesh(new THREE.BoxGeometry(340, 0.35, 1.2), curbMat);
+        frontCurb.position.set(0, 0.18, roadZ + 7.4);
+        const backCurb = new THREE.Mesh(new THREE.BoxGeometry(340, 0.35, 1.2), curbMat);
+        backCurb.position.set(0, 0.18, roadZ - 7.4);
+        roadGroup.add(frontCurb, backCurb);
+
+        // Center Median Line (Yellow/Orange)
+        const centerLine = new THREE.Mesh(
+          new THREE.PlaneGeometry(340, 0.25),
+          new THREE.MeshBasicMaterial({ color: 0xf59e0b })
+        );
+        centerLine.rotation.x = -Math.PI / 2;
+        centerLine.position.set(0, 0.06, roadZ);
+        roadGroup.add(centerLine);
+
+        // White Dashed Lane Markings
+        const dashMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+        for (let x = -155; x <= 155; x += 9) {
+          [-3.5, 3.5].forEach(offsetZ => {
+            const dash = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 0.18), dashMat);
+            dash.rotation.x = -Math.PI / 2;
+            dash.position.set(x, 0.06, roadZ + offsetZ);
+            roadGroup.add(dash);
+          });
+        }
+
+        // Streetlamps along the road
+        const poleMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6 });
+        const lampBulbMat = new THREE.MeshBasicMaterial({ color: 0xfffbeb });
+        for (let x = -120; x <= 120; x += 30) {
+          const lampGroup = new THREE.Group();
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7.5, 8), poleMat);
+          pole.position.y = 3.75;
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 2.2), poleMat);
+          arm.position.set(0, 7.4, 0.9);
+          const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), lampBulbMat);
+          bulb.position.set(0, 7.25, 1.8);
+          lampGroup.add(pole, arm, bulb);
+          lampGroup.position.set(x, 0, roadZ - 7.8);
+          roadGroup.add(lampGroup);
+        }
+
+        // Create 16 Moving Vehicles (Sedans, Tokyo Taxis, Buses, Trucks)
+        const carColors = [
+          0xffffff, 0x1e293b, 0xef4444, 0x3b82f6,
+          0x22c55e, 0xfacc15, 0xe2e8f0, 0x0f172a
+        ];
+
+        function createCarMesh(type, colorHex, dir) {
+          const car = new THREE.Group();
+          const bodyMat = new THREE.MeshStandardMaterial({
+            color: colorHex,
+            roughness: 0.25,
+            metalness: 0.6
+          });
+          const glassMat = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            roughness: 0.1,
+            metalness: 0.8
+          });
+          const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9 });
+
+          if (type === 'bus') {
+            const busBody = new THREE.Mesh(new THREE.BoxGeometry(6.8, 2.4, 2.2), bodyMat);
+            busBody.position.y = 1.45;
+            busBody.castShadow = true;
+            const busStripe = new THREE.Mesh(
+              new THREE.BoxGeometry(6.85, 0.45, 2.24),
+              new THREE.MeshBasicMaterial({ color: 0x16a34a })
+            );
+            busStripe.position.y = 1.1;
+            const busWin = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.85, 2.26), glassMat);
+            busWin.position.y = 1.95;
+            car.add(busBody, busStripe, busWin);
+          } else {
+            const chassis = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.85, 1.8), bodyMat);
+            chassis.position.y = 0.68;
+            chassis.castShadow = true;
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.72, 1.62), bodyMat);
+            cabin.position.set(-0.2 * dir, 1.38, 0);
+            const windows = new THREE.Mesh(new THREE.BoxGeometry(2.16, 0.56, 1.66), glassMat);
+            windows.position.set(-0.2 * dir, 1.38, 0);
+            car.add(chassis, cabin, windows);
+
+            // Tokyo Taxi roof sign
+            if (type === 'taxi') {
+              const sign = new THREE.Mesh(
+                new THREE.BoxGeometry(0.45, 0.22, 0.6),
+                new THREE.MeshBasicMaterial({ color: 0xfef08a })
+              );
+              sign.position.set(-0.2 * dir, 1.84, 0);
+              car.add(sign);
+            }
+          }
+
+          // Wheels
+          const wheelPositions = [
+            [-1.2, 0.36, 0.92],
+            [1.2, 0.36, 0.92],
+            [-1.2, 0.36, -0.92],
+            [1.2, 0.36, -0.92]
+          ];
+          wheelPositions.forEach(([wx, wy, wz]) => {
+            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.25, 12), wheelMat);
+            w.rotation.x = Math.PI / 2;
+            w.position.set(wx, wy, wz);
+            car.add(w);
+          });
+
+          // Headlights & Taillights
+          const headMat = new THREE.MeshBasicMaterial({ color: 0xfffbeb });
+          const tailMat = new THREE.MeshBasicMaterial({ color: 0xff1e1e });
+          const halfLen = type === 'bus' ? 3.42 : 1.92;
+          [-0.6, 0.6].forEach(lz => {
+            const hl = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.32), headMat);
+            hl.position.set(halfLen * dir, 0.72, lz);
+            const tl = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.32), tailMat);
+            tl.position.set(-halfLen * dir, 0.72, lz);
+            car.add(hl, tl);
+          });
+
+          return car;
+        }
+
+        const lanes = [
+          { z: roadZ - 5.1, dir: -1, speedMin: 14, speedMax: 20 },
+          { z: roadZ - 1.9, dir: -1, speedMin: 18, speedMax: 25 },
+          { z: roadZ + 1.9, dir: 1, speedMin: 17, speedMax: 24 },
+          { z: roadZ + 5.1, dir: 1, speedMin: 13, speedMax: 19 }
+        ];
+
+        lanes.forEach((lane, lIdx) => {
+          for (let i = 0; i < 4; i++) {
+            const isBus = i === 0 && lIdx % 2 === 0;
+            const isTaxi = i === 2;
+            const type = isBus ? 'bus' : isTaxi ? 'taxi' : 'sedan';
+            const color = isBus ? 0xf8fafc : isTaxi ? 0x14532d : carColors[(lIdx * 4 + i) % carColors.length];
+            const carMesh = createCarMesh(type, color, lane.dir);
+            const startX = -150 + i * 78 + (Math.random() * 20 - 10);
+            carMesh.position.set(startX, 0, lane.z);
+            roadGroup.add(carMesh);
+            movingCars.push({
+              mesh: carMesh,
+              dir: lane.dir,
+              speed: lane.speedMin + Math.random() * (lane.speedMax - lane.speedMin)
+            });
+          }
+        });
+
+        scene.add(roadGroup);
+      }
+      buildDistantRoadAndTraffic();
+
+      // ==========================================
+      // 9. AUTUMN FOREST & FALLING LEAVES
+      // ==========================================
+      const treePalettes = [
+        { name: 'maple_red', colors: [0xdc2626, 0xb91c1c, 0xef4444] },     // 단풍나무
+        { name: 'ginkgo_gold', colors: [0xeab308, 0xfacc15, 0xf59e0b] },   // 은행나무
+        { name: 'zelkova_orange', colors: [0xea580c, 0xf97316, 0xd97706] },// 느티나무
+        { name: 'pine_green', colors: [0x2d5a27, 0x36692f, 0x1e4620] }     // 소나무
+      ];
+
+      const barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3525, roughness: 0.92 });
+
+      function createAutumnTree(x, z, scale, paletteIndex) {
+        const tree = new THREE.Group();
+        const palette = treePalettes[paletteIndex % treePalettes.length];
+
+        // Trunk & main branches
+        const trunkH = 3.2 * scale;
+        const trunk = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.28 * scale, 0.46 * scale, trunkH, 8),
+          barkMat
+        );
+        trunk.position.y = trunkH / 2;
+        trunk.castShadow = true;
+        trunk.receiveShadow = true;
+        tree.add(trunk);
+
+        // Multi-layered lush foliage clusters
+        const puffs = [
+          [0, trunkH + 1.5 * scale, 0, 2.2 * scale],
+          [1.2 * scale, trunkH + 0.8 * scale, 0.9 * scale, 1.65 * scale],
+          [-1.3 * scale, trunkH + 0.9 * scale, -0.7 * scale, 1.7 * scale],
+          [-0.8 * scale, trunkH + 1.8 * scale, 1.1 * scale, 1.5 * scale],
+          [1.0 * scale, trunkH + 1.9 * scale, -1.0 * scale, 1.55 * scale],
+          [0, trunkH + 2.7 * scale, 0, 1.6 * scale]
+        ];
+
+        puffs.forEach(([px, py, pz, rad], idx) => {
+          const leafMat = new THREE.MeshStandardMaterial({
+            color: palette.colors[idx % palette.colors.length],
+            roughness: 0.8,
+            metalness: 0.02
+          });
+          const geo = new THREE.DodecahedronGeometry(rad, 1);
+          const mesh = new THREE.Mesh(geo, leafMat);
+          mesh.position.set(px, py, pz);
+          mesh.rotation.set(idx * 0.5, idx * 0.8, 0);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          tree.add(mesh);
+        });
+
+        tree.position.set(x, 0, z);
+        scene.add(tree);
+      }
+
+      // Arrange realistic autumn forest framing the Tokyo Tower view & park avenues
+      const treePlacements = [
+        // Background forest line flanking the view of Tokyo Tower & Road (leaving center sightline open so tower & cars are clearly visible!)
+        [-52, -52, 2.1, 0], [-44, -55, 2.4, 1], [-36, -50, 1.9, 2], [-28, -54, 2.2, 0], [-20, -52, 1.8, 1],
+        [20, -52, 1.9, 1], [28, -54, 2.3, 0], [36, -50, 2.0, 2], [44, -55, 2.4, 1], [52, -52, 2.1, 3],
+        // Deep forest behind road on left & right wings
+        [-65, -82, 2.8, 0], [-48, -88, 3.0, 1], [-32, -85, 2.7, 2],
+        [32, -85, 2.7, 1], [48, -88, 3.0, 0], [65, -82, 2.8, 2],
+        // Park side groves (Left & Right)
+        [-38, -32, 1.8, 0], [-32, -22, 1.6, 1], [-42, -14, 2.0, 2], [-28, -8, 1.5, 0],
+        [-36, 8, 1.9, 1], [-30, 18, 1.7, 2], [-42, 24, 2.1, 3], [-24, 28, 1.6, 0],
+        [38, -32, 1.8, 1], [32, -22, 1.7, 0], [42, -14, 2.0, 2], [28, -8, 1.5, 1],
+        [36, 8, 1.8, 0], [30, 18, 1.7, 2], [42, 24, 2.1, 1], [24, 28, 1.6, 3],
+        // Scenic Ginkgo & Maple trees near the lawn
+        [-14, -36, 1.55, 1], [14, -36, 1.55, 0],
+        [-18, -16, 1.45, 0], [18, -16, 1.45, 1],
+        [-20, 14, 1.5, 2], [20, 14, 1.5, 0]
+      ];
+      treePlacements.forEach(([tx, tz, sc, pal]) => createAutumnTree(tx, tz, sc, pal));
+
+      // Falling Autumn Leaves Particle System
+      const LEAF_COUNT = 260;
+      const leavesGroup = new THREE.Group();
+      const leafMeshes = [];
+      const leafGeo = new THREE.PlaneGeometry(0.22, 0.22);
+      const leafMats = [
+        new THREE.MeshBasicMaterial({ color: 0xef4444, side: THREE.DoubleSide }),
+        new THREE.MeshBasicMaterial({ color: 0xfacc15, side: THREE.DoubleSide }),
+        new THREE.MeshBasicMaterial({ color: 0xf97316, side: THREE.DoubleSide })
+      ];
+      for (let i = 0; i < LEAF_COUNT; i++) {
+        const leaf = new THREE.Mesh(leafGeo, leafMats[i % leafMats.length]);
+        leaf.position.set(
+          (Math.random() - 0.5) * 90,
+          1 + Math.random() * 18,
+          (Math.random() - 0.5) * 85 - 10
+        );
+        leaf.userData = {
+          fallSpeed: 0.6 + Math.random() * 0.9,
+          swaySpeed: 1.2 + Math.random() * 1.8,
+          swayOffset: Math.random() * Math.PI * 2,
+          rotSpeed: 1.5 + Math.random() * 2.0
+        };
+        leavesGroup.add(leaf);
+        leafMeshes.push(leaf);
+      }
+      scene.add(leavesGroup);
+
+      // ==========================================
+      // 10. BENCHES & PICNIC MATS (Interactive!)
+      // ==========================================
+      function createParkBench(x, z, rotY, labelName) {
+        const benchGroup = new THREE.Group();
+        benchGroup.position.set(x, 0, z);
+        benchGroup.rotation.y = rotY;
+
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x854d27, roughness: 0.75 });
+        const ironMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.7 });
+
+        // Seat slats
+        for (let i = -1; i <= 1; i++) {
+          const slat = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 0.22), woodMat);
+          slat.position.set(0, 0.52, i * 0.25);
+          slat.castShadow = true;
+          slat.receiveShadow = true;
+          benchGroup.add(slat);
+        }
+        // Backrest slats
+        for (let i = 0; i < 3; i++) {
+          const bSlat = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.18, 0.07), woodMat);
+          bSlat.position.set(0, 0.78 + i * 0.22, -0.36);
+          bSlat.rotation.x = -0.12;
+          bSlat.castShadow = true;
+          benchGroup.add(bSlat);
+        }
+        // Iron legs & armrests
+        [-1.1, 1.1].forEach(lx => {
+          const frontLeg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.52, 0.1), ironMat);
+          frontLeg.position.set(lx, 0.26, 0.25);
+          const backLeg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.25, 0.1), ironMat);
+          backLeg.position.set(lx, 0.62, -0.32);
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.68), ironMat);
+          arm.position.set(lx, 0.76, -0.02);
+          benchGroup.add(frontLeg, backLeg, arm);
+        });
+
+        // Invisible larger click hitbox for effortless bench clicking
+        const hitBox = new THREE.Mesh(
+          new THREE.BoxGeometry(3.0, 1.5, 1.3),
+          new THREE.MeshBasicMaterial({ visible: false })
+        );
+        hitBox.position.y = 0.75;
+        benchGroup.add(hitBox);
+
+        // Compute world seat target position & facing direction
+        const seatLocal = new THREE.Vector3(0, 0, 0.08);
+        benchGroup.updateMatrixWorld();
+        const seatWorld = seatLocal.applyMatrix4(benchGroup.matrixWorld);
+
+        const benchData = {
+          group: benchGroup,
+          hitBox,
+          seatPos: seatWorld,
+          sitRotY: rotY, // Character faces outward (+Z in bench local space)
+          name: labelName
+        };
+        hitBox.userData.benchData = benchData;
+        interactiveBenches.push(benchData);
+        scene.add(benchGroup);
+        return benchData;
+      }
+
+      // Place 5 scenic benches around the park
+      createParkBench(-4.8, -6, Math.PI, '도쿄타워 전망 벤치 A');
+      createParkBench(4.8, -6, Math.PI, '도쿄타워 전망 벤치 B');
+      createParkBench(-4.8, -18, Math.PI / 2, '단풍 산책로 벤치 C');
+      createParkBench(4.8, -18, -Math.PI / 2, '은행나무 길 벤치 D');
+      createParkBench(-10, 6.8, Math.PI, '잔디광장 벤치 E');
+
+      // Create Plaid Picnic Mats (돗자리)
+      function createPicnicMat(x, z, rotY, colorA, colorB, withBasket = true) {
+        const matGroup = new THREE.Group();
+        matGroup.position.set(x, 0.03, z);
+        matGroup.rotation.y = rotY;
+
+        const tex = createPicnicPatternTexture(colorA, colorB);
+        const matMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(3.8, 0.04, 2.8),
+          new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 })
+        );
+        matMesh.receiveShadow = true;
+        matGroup.add(matMesh);
+        walkableMeshes.push(matMesh);
+
+        if (withBasket) {
+          // Wicker Picnic Basket
+          const basket = new THREE.Mesh(
+            new THREE.BoxGeometry(0.65, 0.42, 0.45),
+            new THREE.MeshStandardMaterial({ color: 0xb47b44, roughness: 0.8 })
+          );
+          basket.position.set(-1.2, 0.23, -0.7);
+          basket.castShadow = true;
+          const lid = new THREE.Mesh(
+            new THREE.BoxGeometry(0.69, 0.07, 0.49),
+            new THREE.MeshStandardMaterial({ color: 0x9c6634 })
+          );
+          lid.position.set(-1.2, 0.45, -0.7);
+          // Thermos flask
+          const thermos = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.1, 0.1, 0.42, 12),
+            new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.4 })
+          );
+          thermos.position.set(-0.65, 0.23, -0.75);
+          matGroup.add(basket, lid, thermos);
+        }
+
+        scene.add(matGroup);
+        interactiveMats.push({ x, z, group: matGroup });
+        return matGroup;
+      }
+
+      // Main player's cozy picnic mat on the lawn + additional mats
+      const myPicnicMat = createPicnicMat(-8.5, -11.5, 0.18, 'rgba(239, 68, 68, 0.45)', 'rgba(251, 191, 36, 0.45)', true);
+      createPicnicMat(9.5, -10.5, -0.22, 'rgba(59, 130, 246, 0.42)', 'rgba(255, 255, 255, 0.5)', true);
+      createPicnicMat(11.5, 1.5, 0.12, 'rgba(16, 185, 129, 0.42)', 'rgba(254, 240, 138, 0.45)', true);
+
+      // ==========================================
+      // 11. CHARACTER BUILDER (Cute Female Avatar & Park NPCs)
+      // ==========================================
+      // ==========================================
+      // 11. CHARACTER BUILDER (Soft Cel-Shaded Anime Chibi Style)
+      // ==========================================
+      const outfitThemes = [
+        { coat: 0xff6b8b, cape: 0xff8da6, skirt: 0x9f1239, beret: 0xe11d48, scarf: 0xfff1f2, eye: 0x9333ea, irisLight: 0xf472b6 }, // 로즈 베리
+        { coat: 0xf59e0b, cape: 0xfbbf24, skirt: 0x78350f, beret: 0xd97706, scarf: 0xfef3c7, eye: 0xb45309, irisLight: 0xfbbf24 }, // 어텀 카라멜
+        { coat: 0x60a5fa, cape: 0x93c5fd, skirt: 0x1e3a8a, beret: 0x2563eb, scarf: 0xeff6ff, eye: 0x1d4ed8, irisLight: 0x60a5fa }, // 스카이 블루
+        { coat: 0x34d399, cape: 0x6ee7b7, skirt: 0x065f46, beret: 0x059669, scarf: 0xecfdf5, eye: 0x047857, irisLight: 0x34d399 }, // 포레스트 민트
+        { coat: 0xc084fc, cape: 0xd8b4fe, skirt: 0x581c87, beret: 0x9333ea, scarf: 0xfaf5ff, eye: 0x6d28d9, irisLight: 0xc084fc }  // 라벤더 퍼플
+      ];
+
+      // Smooth 4-tone cel-shading gradient map for soft anime figure look
+      const toonGradientMap = (function () {
+        const c = document.createElement('canvas');
+        c.width = 4;
+        c.height = 1;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#b0b8c4';
+        ctx.fillRect(0, 0, 1, 1);
+        ctx.fillStyle = '#d5dbe3';
+        ctx.fillRect(1, 0, 1, 1);
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(2, 0, 1, 1);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(3, 0, 1, 1);
+        const tex = new THREE.CanvasTexture(c);
+        tex.minFilter = THREE.NearestFilter;
+        tex.magFilter = THREE.NearestFilter;
+        return tex;
+      })();
+
+      function makeToonMat(colorHex, extra = {}) {
+        return new THREE.MeshToonMaterial(
+          Object.assign(
+            {
+              color: colorHex,
+              gradientMap: toonGradientMap,
+              side: THREE.DoubleSide
+            },
+            extra
+          )
+        );
+      }
+
+      // IMPORTANT: LatheGeometry points MUST go from bottom (low Y) to top (high Y)
+      // so outward normals face the camera and nothing looks inside-out or transparent!
+      const coatLathePoints = [
+        new THREE.Vector2(0.0, 0.01),
+        new THREE.Vector2(0.33, 0.01),
+        new THREE.Vector2(0.35, 0.04),
+        new THREE.Vector2(0.28, 0.25),
+        new THREE.Vector2(0.24, 0.45),
+        new THREE.Vector2(0.18, 0.60),
+        new THREE.Vector2(0.01, 0.62)
+      ];
+      const sharedCoatGeo = new THREE.LatheGeometry(coatLathePoints, 28);
+      sharedCoatGeo.computeVertexNormals();
+
+      // Solid closed-bottom flared skirt (bottom to top points + solid underside cap)
+      const skirtLathePoints = [
+        new THREE.Vector2(0.0, -0.24),
+        new THREE.Vector2(0.44, -0.25),
+        new THREE.Vector2(0.46, -0.21),
+        new THREE.Vector2(0.42, -0.12),
+        new THREE.Vector2(0.34, 0.02),
+        new THREE.Vector2(0.26, 0.14),
+        new THREE.Vector2(0.0, 0.14)
+      ];
+      const sharedSkirtGeo = new THREE.LatheGeometry(skirtLathePoints, 28);
+      sharedSkirtGeo.computeVertexNormals();
+
+      const capeLathePoints = [
+        new THREE.Vector2(0.28, 0.34),
+        new THREE.Vector2(0.33, 0.36),
+        new THREE.Vector2(0.28, 0.52),
+        new THREE.Vector2(0.19, 0.61)
+      ];
+      const sharedCapeGeo = new THREE.LatheGeometry(capeLathePoints, 24);
+      sharedCapeGeo.computeVertexNormals();
+
+      const sleeveLathePoints = [
+        new THREE.Vector2(0.0, -0.35),
+        new THREE.Vector2(0.085, -0.35),
+        new THREE.Vector2(0.115, -0.31),
+        new THREE.Vector2(0.105, -0.18),
+        new THREE.Vector2(0.075, 0.0),
+        new THREE.Vector2(0.01, 0.04)
+      ];
+      const sharedSleeveGeo = new THREE.LatheGeometry(sleeveLathePoints, 18);
+      sharedSleeveGeo.computeVertexNormals();
+
+      function createCuteGirlCharacter(themeIdx = 0, hairColorHex = 0x52301c) {
+        const root = new THREE.Group();
+        const bodyPivot = new THREE.Group();
+        root.add(bodyPivot);
+
+        let currentThemeIdx = themeIdx % outfitThemes.length;
+        const theme = outfitThemes[currentThemeIdx];
+
+        const skinMat = makeToonMat(0xffe9dc);
+        const hairMat = makeToonMat(hairColorHex);
+        const coatMat = makeToonMat(theme.coat);
+        const capeMat = makeToonMat(theme.cape);
+        const skirtMat = makeToonMat(theme.skirt);
+        const beretMat = makeToonMat(theme.beret);
+        const scarfMat = makeToonMat(theme.scarf);
+        const sockMat = makeToonMat(0xfffdf9);
+        const shoeMat = makeToonMat(0x4a2511);
+
+        // Torso & Seamless A-Line Coat Group
+        const torsoGroup = new THREE.Group();
+        torsoGroup.position.y = 0.86;
+        bodyPivot.add(torsoGroup);
+
+        const coatMesh = new THREE.Mesh(sharedCoatGeo, coatMat);
+        coatMesh.castShadow = true;
+        coatMesh.receiveShadow = true;
+        torsoGroup.add(coatMesh);
+
+        // Soft Rounded Shoulder Capelet & Cozy Knit Scarf
+        const capeMesh = new THREE.Mesh(sharedCapeGeo, capeMat);
+        capeMesh.castShadow = true;
+        torsoGroup.add(capeMesh);
+
+        // Fluffy Muffler / Scarf around neck
+        const scarfRing = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.072, 12, 22), scarfMat);
+        scarfRing.rotation.x = Math.PI / 2;
+        scarfRing.position.y = 0.58;
+        const scarfTail = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.27, 12), scarfMat);
+        scarfTail.position.set(0.11, 0.44, 0.19);
+        scarfTail.rotation.z = -0.15;
+        scarfTail.rotation.x = 0.2;
+        torsoGroup.add(scarfRing, scarfTail);
+
+        // Solid Flared Autumn Skirt (With pleated trim band at hem)
+        const skirtMesh = new THREE.Mesh(sharedSkirtGeo, skirtMat);
+        skirtMesh.castShadow = true;
+        skirtMesh.receiveShadow = true;
+        torsoGroup.add(skirtMesh);
+
+        // White cream trim stripe near bottom hem of skirt for extra crispness
+        const hemTrim = new THREE.Mesh(
+          new THREE.TorusGeometry(0.448, 0.016, 8, 28),
+          scarfMat
+        );
+        hemTrim.rotation.x = Math.PI / 2;
+        hemTrim.position.y = -0.21;
+        torsoGroup.add(hemTrim);
+
+        // Head Group (Soft Chibi Anime Proportions with Unobstructed Expressive Eyes)
+        const headGroup = new THREE.Group();
+        headGroup.position.y = 0.64;
+        torsoGroup.add(headGroup);
+
+        const headGeo = new THREE.SphereGeometry(0.40, 28, 24);
+        const headMesh = new THREE.Mesh(headGeo, skinMat);
+        headMesh.scale.set(1.06, 0.98, 1.0); // Cute soft anime cheeks
+        headMesh.position.y = 0.36;
+        headMesh.castShadow = true;
+        headGroup.add(headMesh);
+
+        // Cute Little Rounded Ears
+        [-0.41, 0.41].forEach(ex => {
+          const ear = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), skinMat);
+          ear.scale.set(0.55, 1.0, 0.8);
+          ear.position.set(ex, 0.34, -0.02);
+          headGroup.add(ear);
+        });
+
+        // ========================================================
+        // SIMPLE, CUTE CHARACTER EYES & FACE FEATURES
+        // ========================================================
+        const faceFeatures = new THREE.Group();
+        headGroup.add(faceFeatures);
+
+        const openEyesGroup = new THREE.Group();
+        const blinkEyesGroup = new THREE.Group();
+        blinkEyesGroup.visible = false;
+        faceFeatures.add(openEyesGroup, blinkEyesGroup);
+
+        const eyeDarkMat = new THREE.MeshBasicMaterial({ color: 0x231712 });
+        const eyeShineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const blushMat = new THREE.MeshBasicMaterial({
+          color: 0xff8da1,
+          transparent: true,
+          opacity: 0.55
+        });
+
+        [-1, 1].forEach(side => {
+          const ex = side * 0.135;
+          const ey = 0.345;
+
+          // Simple, clean dark oval button eye
+          const eyeOval = new THREE.Mesh(new THREE.SphereGeometry(0.042, 14, 12), eyeDarkMat);
+          eyeOval.scale.set(0.82, 1.25, 0.35);
+          eyeOval.position.set(ex, ey, 0.388);
+          openEyesGroup.add(eyeOval);
+
+          // Single tiny white catchlight dot
+          const shineDot = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 8), eyeShineMat);
+          shineDot.scale.set(1.0, 1.0, 0.4);
+          shineDot.position.set(ex - 0.012, ey + 0.022, 0.402);
+          openEyesGroup.add(shineDot);
+
+          // Happy curved blink line (^ ^)
+          const blinkArc = new THREE.Mesh(
+            new THREE.TorusGeometry(0.048, 0.009, 8, 12, Math.PI * 0.8),
+            eyeDarkMat
+          );
+          blinkArc.position.set(ex, ey - 0.005, 0.392);
+          blinkArc.rotation.z = Math.PI * 0.1;
+          blinkEyesGroup.add(blinkArc);
+
+          // Simple thin curved eyebrow
+          const brow = new THREE.Mesh(
+            new THREE.TorusGeometry(0.048, 0.007, 6, 10, Math.PI * 0.62),
+            eyeDarkMat
+          );
+          brow.position.set(ex, ey + 0.082, 0.382);
+          brow.rotation.z = Math.PI * 0.18 - side * 0.06;
+          faceFeatures.add(brow);
+
+          // Soft pink cheek blush oval
+          const blush = new THREE.Mesh(new THREE.CircleGeometry(0.046, 14), blushMat);
+          blush.scale.set(1.3, 0.8, 1.0);
+          blush.position.set(side * 0.205, 0.27, 0.365);
+          blush.rotation.y = side * 0.35;
+          faceFeatures.add(blush);
+        });
+
+        // Simple cute small smile
+        const smileMouth = new THREE.Mesh(
+          new THREE.TorusGeometry(0.030, 0.0075, 8, 12, Math.PI * 0.82),
+          new THREE.MeshBasicMaterial({ color: 0xd9465f })
+        );
+        smileMouth.rotation.x = Math.PI;
+        smileMouth.rotation.z = -Math.PI * 0.09;
+        smileMouth.position.set(0, 0.245, 0.395);
+        faceFeatures.add(smileMouth);
+
+        // ========================================================
+        // SCULPTED VOLUMINOUS ANIME HAIR (Short Parted Bangs ABOVE Eyebrows!)
+        // ========================================================
+        const hairBack = new THREE.Mesh(
+          new THREE.SphereGeometry(0.428, 24, 20, 0, Math.PI * 2, 0, Math.PI * 0.50),
+          hairMat
+        );
+        hairBack.scale.set(1.07, 1.02, 1.06);
+        hairBack.position.set(0, 0.38, -0.05);
+        hairBack.rotation.x = -0.68;
+        headGroup.add(hairBack);
+
+        const bangSpecs = [
+          { ang: -0.44, bottomY: 0.51, r: 0.048 },
+          { ang: -0.22, bottomY: 0.53, r: 0.045 },
+          { ang: -0.06, bottomY: 0.55, r: 0.038 },
+          { ang: 0.14,  bottomY: 0.54, r: 0.042 },
+          { ang: 0.36,  bottomY: 0.51, r: 0.048 }
+        ];
+        bangSpecs.forEach(b => {
+          const curve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(Math.sin(b.ang) * 0.16, 0.72, Math.cos(b.ang) * 0.20),
+            new THREE.Vector3(Math.sin(b.ang) * 0.28, 0.63, Math.cos(b.ang) * 0.34),
+            new THREE.Vector3(Math.sin(b.ang) * 0.31, b.bottomY, Math.cos(b.ang) * 0.365)
+          ]);
+          const bangGeo = new THREE.TubeGeometry(curve, 10, b.r, 8, false);
+          const bangMesh = new THREE.Mesh(bangGeo, hairMat);
+          headGroup.add(bangMesh);
+        });
+
+        [-1, 1].forEach(side => {
+          const sideCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(side * 0.36, 0.56, 0.12),
+            new THREE.Vector3(side * 0.43, 0.36, 0.12),
+            new THREE.Vector3(side * 0.39, 0.17, 0.14)
+          ]);
+          const sideLock = new THREE.Mesh(new THREE.TubeGeometry(sideCurve, 10, 0.062, 8, false), hairMat);
+          headGroup.add(sideLock);
+
+          const tailCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(side * 0.38, 0.42, -0.10),
+            new THREE.Vector3(side * 0.52, 0.28, -0.14),
+            new THREE.Vector3(side * 0.56, 0.06, -0.08),
+            new THREE.Vector3(side * 0.48, -0.08, 0.02)
+          ]);
+          const tailMesh = new THREE.Mesh(new THREE.TubeGeometry(tailCurve, 12, 0.102, 10, false), hairMat);
+          const tailTip = new THREE.Mesh(new THREE.SphereGeometry(0.092, 10, 10), hairMat);
+          tailTip.position.set(side * 0.48, -0.08, 0.02);
+
+          const ribbonBow = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.09, 0.09), beretMat);
+          ribbonBow.position.set(side * 0.41, 0.44, -0.08);
+          ribbonBow.rotation.z = side * 0.35;
+          headGroup.add(tailMesh, tailTip, ribbonBow);
+        });
+
+        // Cozy Knitted Autumn Beret with Fluffy Cream Pom-Pom
+        const beretGroup = new THREE.Group();
+        beretGroup.position.set(0.06, 0.71, -0.05);
+        beretGroup.rotation.z = -0.20;
+        beretGroup.rotation.x = -0.14;
+        const beretCrown = new THREE.Mesh(new THREE.SphereGeometry(0.37, 20, 16), beretMat);
+        beretCrown.scale.set(1.16, 0.44, 1.16);
+        const pompom = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), scarfMat);
+        pompom.position.set(0, 0.17, 0);
+        beretGroup.add(beretCrown, pompom);
+        headGroup.add(beretGroup);
+
+        // Seamless Puffed Coat Sleeves & Soft Hands
+        function makeArm(side) {
+          const armPivot = new THREE.Group();
+          armPivot.position.set(side * 0.25, 0.48, 0);
+
+          const sleeve = new THREE.Mesh(sharedSleeveGeo, coatMat);
+          sleeve.castShadow = true;
+
+          const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.078, 0.028, 8, 14), scarfMat);
+          cuff.rotation.x = Math.PI / 2;
+          cuff.position.y = -0.35;
+
+          const hand = new THREE.Mesh(new THREE.SphereGeometry(0.072, 12, 12), skinMat);
+          hand.position.y = -0.41;
+
+          armPivot.add(sleeve, cuff, hand);
+          torsoGroup.add(armPivot);
+          return armPivot;
+        }
+        const leftArm = makeArm(-1);
+        const rightArm = makeArm(1);
+
+        // 3D Open Book (Natural reading orientation: pages face UP & INWARD toward character's eyes,
+        // outer cover & spine face DOWN & OUTWARD resting in her hands!)
+        const bookGroup = new THREE.Group();
+        const coverMat = makeToonMat(0x9a3412);
+        const pageMat = makeToonMat(0xfef9c3);
+        const lineMat = new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+
+        // Left & Right Wings in horizontal X-Z plane:
+        // Bottom (-Y) is hardcover, Top (+Y) is open white page
+        const leftWing = new THREE.Group();
+        leftWing.rotation.z = -0.24; // Tilts left wing slightly up into an open V shape
+        const leftCover = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.022, 0.30), coverMat);
+        leftCover.position.set(-0.115, -0.012, 0);
+        const leftPage = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.032, 0.28), pageMat);
+        leftPage.position.set(-0.11, 0.014, 0);
+        // Subtle text lines on left page
+        for (let li = -2; li <= 2; li++) {
+          const line = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.004, 0.012), lineMat);
+          line.position.set(-0.11, 0.032, li * 0.042);
+          leftWing.add(line);
+        }
+        leftWing.add(leftCover, leftPage);
+
+        const rightWing = new THREE.Group();
+        rightWing.rotation.z = 0.24; // Tilts right wing slightly up into an open V shape
+        const rightCover = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.022, 0.30), coverMat);
+        rightCover.position.set(0.115, -0.012, 0);
+        const rightPage = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.032, 0.28), pageMat);
+        rightPage.position.set(0.11, 0.014, 0);
+        for (let ri = -2; ri <= 2; ri++) {
+          const line = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.004, 0.012), lineMat);
+          line.position.set(0.11, 0.032, ri * 0.042);
+          rightWing.add(line);
+        }
+        rightWing.add(rightCover, rightPage);
+
+        // Center Spine underneath
+        const spine = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.028, 0.305), coverMat);
+        spine.position.set(0, -0.015, 0);
+
+        bookGroup.add(leftWing, rightWing, spine);
+        // Position in front of torso and tilt (-X rotation tilts +Y pages backward toward -Z character face!)
+        bookGroup.position.set(0, 0.16, 0.38);
+        bookGroup.rotation.x = -0.62;
+        bookGroup.visible = false;
+        torsoGroup.add(bookGroup);
+
+        // Soft Rounded Legs with Knee Socks & Rounded Mary-Jane Shoes
+        function makeLeg(side) {
+          const legPivot = new THREE.Group();
+          legPivot.position.set(side * 0.12, 0.68, 0);
+
+          const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.088, 0.074, 0.32, 14), skinMat);
+          thigh.position.y = -0.16;
+
+          const kneeSock = new THREE.Mesh(new THREE.CylinderGeometry(0.076, 0.068, 0.28, 14), sockMat);
+          kneeSock.position.y = -0.44;
+          kneeSock.castShadow = true;
+
+          const shoe = new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 12), shoeMat);
+          shoe.scale.set(0.88, 0.68, 1.35);
+          shoe.position.set(0, -0.61, 0.045);
+          shoe.castShadow = true;
+
+          legPivot.add(thigh, kneeSock, shoe);
+          bodyPivot.add(legPivot);
+          return legPivot;
+        }
+        const leftLeg = makeLeg(-1);
+        const rightLeg = makeLeg(1);
+
+        return {
+          root,
+          bodyPivot,
+          torsoGroup,
+          headGroup,
+          leftArm,
+          rightArm,
+          leftLeg,
+          rightLeg,
+          bookGroup,
+          openEyesGroup,
+          blinkEyesGroup,
+          coatMat,
+          capeMat,
+          skirtMat,
+          beretMat,
+          scarfMat,
+          blinkSeed: Math.random() * 10,
+          isBlinking: false,
+          setTheme(idx) {
+            currentThemeIdx = idx % outfitThemes.length;
+            const t = outfitThemes[currentThemeIdx];
+            coatMat.color.setHex(t.coat);
+            capeMat.color.setHex(t.cape);
+            skirtMat.color.setHex(t.skirt);
+            beretMat.color.setHex(t.beret);
+            scarfMat.color.setHex(t.scarf);
+          }
+        };
+      }
+
+      // Create HTML Floating Label for any Character / NPC
+      function createFloatingLabel(name, roleBadgeColor = 'bg-orange-500') {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'world-label flex flex-col items-center';
+        const bubble = document.createElement('div');
+        bubble.className = 'speech-bubble hidden';
+        const tag = document.createElement('div');
+        tag.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-bold text-white shadow-md flex items-center gap-1 bg-slate-900/75 border border-white/25';
+        const dot = document.createElement('span');
+        dot.className = `w-2 h-2 rounded-full ${roleBadgeColor}`;
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = name;
+        tag.appendChild(dot);
+        tag.appendChild(nameSpan);
+        wrapper.appendChild(bubble);
+        wrapper.appendChild(tag);
+        labelsContainer.appendChild(wrapper);
+        return {
+          wrapper,
+          bubble,
+          nameSpan,
+          bubbleTimer: null,
+          say(text, duration = 4500) {
+            bubble.textContent = text;
+            bubble.classList.remove('hidden');
+            if (this.bubbleTimer) clearTimeout(this.bubbleTimer);
+            this.bubbleTimer = setTimeout(() => {
+              bubble.classList.add('hidden');
+            }, duration);
+          }
+        };
+      }
+
+      function updateCharacterPose(rig, state, animTime) {
+        // Periodic natural anime eye blinking
+        if (rig.openEyesGroup && rig.blinkEyesGroup) {
+          const cycle = (animTime + (rig.blinkSeed || 0)) % 4.2;
+          const shouldBlink = cycle < 0.15;
+          if (shouldBlink !== rig.isBlinking) {
+            rig.isBlinking = shouldBlink;
+            rig.openEyesGroup.visible = !shouldBlink;
+            rig.blinkEyesGroup.visible = shouldBlink;
+          }
+        }
+
+        // Reset base transforms
+        rig.bodyPivot.position.set(0, 0, 0);
+        rig.bodyPivot.rotation.set(0, 0, 0);
+        rig.bodyPivot.scale.set(1, 1, 1);
+        rig.torsoGroup.position.set(0, 0.86, 0);
+        rig.torsoGroup.rotation.set(0, 0, 0);
+        rig.headGroup.rotation.set(0, 0, 0);
+        rig.bookGroup.visible = false;
+
+        if (state === 'walking') {
+          const phase = animTime * 9.2;
+          const swing = Math.sin(phase) * 0.55;
+          const bounce = Math.abs(Math.sin(phase));
+          rig.leftLeg.rotation.x = swing;
+          rig.rightLeg.rotation.x = -swing;
+          rig.leftLeg.rotation.z = 0;
+          rig.rightLeg.rotation.z = 0;
+          rig.leftArm.rotation.x = -swing * 0.68;
+          rig.rightArm.rotation.x = swing * 0.68;
+          rig.leftArm.rotation.z = -0.18;
+          rig.rightArm.rotation.z = 0.18;
+          rig.bodyPivot.position.y = bounce * 0.09;
+          rig.bodyPivot.scale.set(1 - bounce * 0.02, 1 + bounce * 0.03, 1 - bounce * 0.02);
+          rig.torsoGroup.rotation.z = Math.cos(phase) * 0.04;
+          rig.headGroup.rotation.z = Math.sin(phase * 0.5) * 0.06;
+        } else if (state === 'reading') {
+          // Sit comfortably on ground reading book
+          rig.bodyPivot.position.y = -0.46;
+          rig.leftLeg.rotation.x = -Math.PI / 2.15;
+          rig.rightLeg.rotation.x = -Math.PI / 2.15;
+          rig.leftLeg.rotation.z = -0.22;
+          rig.rightLeg.rotation.z = 0.22;
+          rig.leftArm.rotation.x = -0.98;
+          rig.rightArm.rotation.x = -0.98;
+          rig.leftArm.rotation.z = 0.24;
+          rig.rightArm.rotation.z = -0.24;
+          rig.headGroup.rotation.x = 0.22 + Math.sin(animTime * 2.0) * 0.04;
+          rig.headGroup.rotation.y = Math.sin(animTime * 1.1) * 0.1;
+          rig.bookGroup.visible = true;
+        } else if (state === 'lying') {
+          // Lie flat on back on the grass looking up at the blue autumn sky
+          rig.bodyPivot.position.y = 0.19;
+          rig.bodyPivot.position.z = -0.58;
+          rig.bodyPivot.rotation.x = -Math.PI / 2;
+          rig.leftLeg.rotation.x = 0.04;
+          rig.rightLeg.rotation.x = 0.04;
+          rig.leftLeg.rotation.z = -0.10;
+          rig.rightLeg.rotation.z = 0.10;
+          rig.leftArm.rotation.x = -0.18;
+          rig.rightArm.rotation.x = -0.18;
+          rig.leftArm.rotation.z = -0.42;
+          rig.rightArm.rotation.z = 0.42;
+          rig.headGroup.rotation.y = Math.sin(animTime * 0.9) * 0.12;
+        } else if (state === 'sitting_bench') {
+          // Sit comfortably on park bench
+          rig.bodyPivot.position.y = -0.22;
+          rig.leftLeg.rotation.x = -Math.PI / 2.25;
+          rig.rightLeg.rotation.x = -Math.PI / 2.25;
+          rig.leftLeg.rotation.z = -0.06;
+          rig.rightLeg.rotation.z = 0.06;
+          rig.leftArm.rotation.x = -0.42;
+          rig.rightArm.rotation.x = -0.42;
+          rig.leftArm.rotation.z = -0.12;
+          rig.rightArm.rotation.z = 0.12;
+          rig.headGroup.rotation.y = Math.sin(animTime * 1.1) * 0.14;
+          rig.headGroup.rotation.z = Math.cos(animTime * 0.8) * 0.04;
+        } else {
+          // Soft breathing idle pose
+          const breath = Math.sin(animTime * 2.2);
+          rig.leftLeg.rotation.set(0, 0, 0);
+          rig.rightLeg.rotation.set(0, 0, 0);
+          rig.leftArm.rotation.set(breath * 0.04, 0, -0.18);
+          rig.rightArm.rotation.set(-breath * 0.04, 0, 0.18);
+          rig.bodyPivot.scale.set(1, 1 + breath * 0.012, 1);
+          rig.headGroup.rotation.y = Math.sin(animTime * 1.2) * 0.08;
+          rig.headGroup.rotation.z = Math.sin(animTime * 0.9) * 0.03;
+        }
+      }
+
+      // ==========================================
+      // 12. PARK NPCs: DOG WALKER & BENTO PICNICKERS
+      // ==========================================
+      // A. Dog Walker NPC + Plump Cute Cel-Shaded Shiba Inu on Leash
+      const dogWalkerGroup = new THREE.Group();
+      const walkerRig = createCuteGirlCharacter(3, 0x3b2219);
+      dogWalkerGroup.add(walkerRig.root);
+
+      // Build Plump Rounded Shiba Inu Dog (No blocky boxes!)
+      const shibaGroup = new THREE.Group();
+      const shibaFurMat = makeToonMat(0xe07a24);
+      const shibaCreamMat = makeToonMat(0xfff7ed);
+      const collarMat = makeToonMat(0xef4444);
+
+      const dogBody = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 14), shibaFurMat);
+      dogBody.scale.set(0.95, 0.88, 1.48);
+      dogBody.position.y = 0.36;
+      dogBody.castShadow = true;
+
+      const dogChest = new THREE.Mesh(new THREE.SphereGeometry(0.20, 14, 12), shibaCreamMat);
+      dogChest.scale.set(0.9, 0.85, 0.95);
+      dogChest.position.set(0, 0.34, 0.22);
+
+      const dogHead = new THREE.Mesh(new THREE.SphereGeometry(0.23, 18, 16), shibaFurMat);
+      dogHead.scale.set(1.08, 0.98, 1.0);
+      dogHead.position.set(0, 0.56, 0.34);
+
+      const dogCheeks = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12), shibaCreamMat);
+      dogCheeks.scale.set(1.15, 0.65, 0.95);
+      dogCheeks.position.set(0, 0.50, 0.41);
+
+      const dogSnout = new THREE.Mesh(new THREE.SphereGeometry(0.095, 12, 10), shibaCreamMat);
+      dogSnout.scale.set(0.95, 0.78, 1.25);
+      dogSnout.position.set(0, 0.51, 0.54);
+
+      const dogNose = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 10, 10),
+        new THREE.MeshBasicMaterial({ color: 0x1e1b18 })
+      );
+      dogNose.position.set(0, 0.54, 0.64);
+
+      // Cute Shiba Eyes & Cream "Maro" Eyebrow Spots
+      [-0.085, 0.085].forEach(ex => {
+        const dEye = new THREE.Mesh(
+          new THREE.SphereGeometry(0.028, 8, 8),
+          new THREE.MeshBasicMaterial({ color: 0x1e1b18 })
+        );
+        dEye.position.set(ex, 0.59, 0.53);
+        const dBrow = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), shibaCreamMat);
+        dBrow.scale.set(1.3, 0.7, 0.6);
+        dBrow.position.set(ex, 0.64, 0.51);
+        shibaGroup.add(dEye, dBrow);
+      });
+
+      const dogCollar = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.032, 8, 16), collarMat);
+      dogCollar.position.set(0, 0.45, 0.27);
+      dogCollar.rotation.x = 1.25;
+
+      // Soft Pointy Shiba Ears & Fluffy Curled Tail
+      [-0.13, 0.13].forEach(ex => {
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.17, 12), shibaFurMat);
+        ear.position.set(ex, 0.76, 0.30);
+        ear.rotation.z = ex > 0 ? -0.22 : 0.22;
+        shibaGroup.add(ear);
+      });
+      const dogTail = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.05, 10, 14, Math.PI * 1.35), shibaFurMat);
+      dogTail.position.set(0, 0.52, -0.32);
+      dogTail.rotation.y = Math.PI / 2;
+      shibaGroup.add(dogBody, dogChest, dogHead, dogCheeks, dogSnout, dogNose, dogCollar, dogTail);
+
+      const dogLegs = [];
+      [
+        [-0.11, 0.16, 0.20],
+        [0.11, 0.16, 0.20],
+        [-0.11, 0.16, -0.20],
+        [0.11, 0.16, -0.20]
+      ].forEach(([lx, ly, lz]) => {
+        const dLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.04, 0.28, 10), shibaCreamMat);
+        dLeg.position.set(lx, ly, lz);
+        shibaGroup.add(dLeg);
+        dogLegs.push(dLeg);
+      });
+
+      shibaGroup.position.set(0.95, 0, 0.75);
+      dogWalkerGroup.add(shibaGroup);
+
+      // Leash connecting walker hand to dog collar
+      const leashGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0.32, 0.92, 0.1),
+        new THREE.Vector3(0.65, 0.66, 0.45),
+        new THREE.Vector3(0.95, 0.46, 0.98)
+      ]);
+      const leashLine = new THREE.Line(
+        leashGeo,
+        new THREE.LineBasicMaterial({ color: 0xef4444 })
+      );
+      dogWalkerGroup.add(leashLine);
+      scene.add(dogWalkerGroup);
+
+      const dogWalkerLabel = createFloatingLabel('산책중인 유나 & 시바견 코코 🐕', 'bg-emerald-400');
+      let dogWalkAngle = 0;
+
+      // B. Bento-Eating NPCs on Picnic Mat ("도시락 먹고 있는 사람")
+      const bentoGroup = new THREE.Group();
+      bentoGroup.position.set(9.5, 0.05, -10.5);
+      scene.add(bentoGroup);
+
+      const bentoEater1 = createCuteGirlCharacter(1, 0x4a2c18);
+      bentoEater1.root.position.set(-0.85, 0, -0.2);
+      bentoEater1.root.rotation.y = 0.75;
+      updateCharacterPose(bentoEater1, 'reading', 0);
+      bentoEater1.bookGroup.visible = false;
+      bentoGroup.add(bentoEater1.root);
+
+      const bentoEater2 = createCuteGirlCharacter(2, 0x291d18);
+      bentoEater2.root.position.set(0.85, 0, -0.2);
+      bentoEater2.root.rotation.y = -0.75;
+      updateCharacterPose(bentoEater2, 'reading', 0);
+      bentoEater2.bookGroup.visible = false;
+      bentoGroup.add(bentoEater2.root);
+
+      // Detailed Japanese Bento Box (도시락) on the Picnic Mat
+      function createJapaneseBentoBox(x, z) {
+        const box = new THREE.Group();
+        box.position.set(x, 0.08, z);
+        const tray = new THREE.Mesh(
+          new THREE.BoxGeometry(0.62, 0.1, 0.46),
+          new THREE.MeshStandardMaterial({ color: 0x1e1b18, roughness: 0.4 })
+        );
+        const innerRed = new THREE.Mesh(
+          new THREE.BoxGeometry(0.58, 0.11, 0.42),
+          new THREE.MeshStandardMaterial({ color: 0xb91c1c })
+        );
+        const rice = new THREE.Mesh(
+          new THREE.BoxGeometry(0.25, 0.13, 0.36),
+          new THREE.MeshStandardMaterial({ color: 0xffffff })
+        );
+        rice.position.x = -0.14;
+        const umeboshi = new THREE.Mesh(
+          new THREE.SphereGeometry(0.035, 8, 8),
+          new THREE.MeshStandardMaterial({ color: 0xdc2626 })
+        );
+        umeboshi.position.set(-0.14, 0.07, 0);
+        const tamago = new THREE.Mesh(
+          new THREE.BoxGeometry(0.14, 0.13, 0.14),
+          new THREE.MeshStandardMaterial({ color: 0xfacc15 })
+        );
+        tamago.position.set(0.12, 0.02, -0.09);
+        const sausage = new THREE.Mesh(
+          new THREE.SphereGeometry(0.055, 8, 8),
+          new THREE.MeshStandardMaterial({ color: 0xef4444 })
+        );
+        sausage.position.set(0.14, 0.05, 0.09);
+        const broccoli = new THREE.Mesh(
+          new THREE.SphereGeometry(0.06, 8, 8),
+          new THREE.MeshStandardMaterial({ color: 0x15803d })
+        );
+        broccoli.position.set(0.03, 0.05, 0.09);
+        box.add(tray, innerRed, rice, umeboshi, tamago, sausage, broccoli);
+        return box;
+      }
+      bentoGroup.add(createJapaneseBentoBox(-0.32, 0.28));
+      bentoGroup.add(createJapaneseBentoBox(0.32, 0.28));
+
+      const bentoLabel = createFloatingLabel('도시락 피크닉중인 하루 & 미오 🍱', 'bg-amber-400');
+
+      // ==========================================
+      // 13. MAIN PLAYER STATE & CONTROLS
+      // ==========================================
+      const myPlayerId = 'player_' + Math.random().toString(36).slice(2, 9);
+      let myThemeIdx = 0;
+      const myRig = createCuteGirlCharacter(myThemeIdx, 0x4a2c1d);
+      myRig.root.position.set(0, 0, 8);
+      myRig.root.rotation.y = Math.PI; // Facing Tokyo Tower initially
+      scene.add(myRig.root);
+
+      const myLabel = createFloatingLabel('가을소녀 (나)', 'bg-orange-500');
+      myLabel.say('바닥을 클릭해 산책하거나 아래 버튼으로 책을 읽고 누워보세요! 🍂', 5500);
+
+      const playerState = {
+        mode: 'idle', // 'idle' | 'walking' | 'reading' | 'lying' | 'sitting_bench'
+        targetPos: new THREE.Vector3(0, 0, 8),
+        pendingBench: null,
+        moveSpeed: 5.4
+      };
+
+      const btnReadBook = document.getElementById('btn-read-book');
+      const btnLieDown = document.getElementById('btn-lie-down');
+      const btnSitBench = document.getElementById('btn-sit-bench');
+      const btnPicnicMat = document.getElementById('btn-picnic-mat');
+      const btnStandWalk = document.getElementById('btn-stand-walk');
+
+      function updateActionButtonsUI() {
+        [btnReadBook, btnLieDown, btnSitBench, btnStandWalk].forEach(b => {
+          if (b) b.classList.remove('active-state');
+        });
+        if (playerState.mode === 'reading' && btnReadBook) {
+          btnReadBook.classList.add('active-state');
+        } else if (playerState.mode === 'lying' && btnLieDown) {
+          btnLieDown.classList.add('active-state');
+        } else if (playerState.mode === 'sitting_bench' && btnSitBench) {
+          btnSitBench.classList.add('active-state');
+        } else if (btnStandWalk) {
+          btnStandWalk.classList.add('active-state');
+        }
+      }
+
+      function setPlayerPosture(newMode) {
+        initAudio();
+        playPopSound(560);
+        playerState.pendingBench = null;
+        playerState.mode = newMode;
+        playerState.targetPos.copy(myRig.root.position);
+        updateActionButtonsUI();
+
+        if (newMode === 'reading') {
+          showToast('바닥에 앉아 가을 독서를 시작합니다 📖');
+          myLabel.say('가을 바람 불 때 읽는 책이 제일 좋아 📖🍂', 4000);
+        } else if (newMode === 'lying') {
+          showToast('바닥에 누워 파란 가을 하늘과 구름을 바라봅니다 ☁️');
+          myLabel.say('와~ 파란 하늘이랑 구름이 진짜 예쁘다 ☁️✨', 4000);
+        } else if (newMode === 'idle') {
+          showToast('자리에서 일어났습니다. 바닥을 클릭하면 걸어갑니다 🚶‍♀️');
+        }
+        broadcastMyState();
+      }
+
+      function walkToBench(benchData) {
+        initAudio();
+        playPopSound(620);
+        playerState.pendingBench = benchData;
+        playerState.targetPos.copy(benchData.seatPos);
+        playerState.mode = 'walking';
+        updateActionButtonsUI();
+        showToast(`${benchData.name}(으)로 걸어가 앉습니다 🪑`);
+        broadcastMyState();
+      }
+
+      btnReadBook.addEventListener('click', () => {
+        if (playerState.mode === 'reading') {
+          setPlayerPosture('idle');
+        } else {
+          setPlayerPosture('reading');
+        }
+      });
+
+      btnLieDown.addEventListener('click', () => {
+        if (playerState.mode === 'lying') {
+          setPlayerPosture('idle');
+        } else {
+          setPlayerPosture('lying');
+        }
+      });
+
+      btnSitBench.addEventListener('click', () => {
+        // Find nearest bench and walk there to sit
+        let nearest = interactiveBenches[0];
+        let minDist = Infinity;
+        interactiveBenches.forEach(b => {
+          const dist = myRig.root.position.distanceTo(b.seatPos);
+          if (dist < minDist) {
+            minDist = dist;
+            nearest = b;
+          }
+        });
+        if (nearest) walkToBench(nearest);
+      });
+
+      btnPicnicMat.addEventListener('click', () => {
+        initAudio();
+        playPopSound(500);
+        playerState.pendingBench = null;
+        playerState.targetPos.set(-8.2, 0, -11.2);
+        playerState.mode = 'walking';
+        updateActionButtonsUI();
+        showToast('체크무늬 돗자리로 걸어갑니다 🧺');
+        broadcastMyState();
+      });
+
+      btnStandWalk.addEventListener('click', () => {
+        setPlayerPosture('idle');
+      });
+
+      // Outfit & Nickname Controls
+      const nicknameInput = document.getElementById('nickname-input');
+      nicknameInput.addEventListener('input', () => {
+        const val = nicknameInput.value.trim() || '가을소녀';
+        myLabel.nameSpan.textContent = val + ' (나)';
+        broadcastMyState();
+        renderPlayerRoster();
+      });
+
+      document.getElementById('outfit-color-btn').addEventListener('click', () => {
+        initAudio();
+        playPopSound(680);
+        myThemeIdx = (myThemeIdx + 1) % outfitThemes.length;
+        myRig.setTheme(myThemeIdx);
+        showToast('가을 코디 색상을 변경했습니다 🎀');
+        broadcastMyState();
+      });
+
+      // Auto-Chat Emotes
+      function sendMyChat(text) {
+        const msg = text.trim();
+        if (!msg) return;
+        initAudio();
+        playPopSound(720);
+        myLabel.say(msg, 5000);
+        broadcastMyState(msg);
+      }
+      document.querySelectorAll('.emote-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const msg = btn.getAttribute('data-emote');
+          if (msg) sendMyChat(msg);
+        });
+      });
+
+      // Sky Lighting Mode Toggle (Day / Sunset)
+      const timeDayBtn = document.getElementById('time-day-btn');
+      const timeSunsetBtn = document.getElementById('time-sunset-btn');
+
+      timeDayBtn.addEventListener('click', () => {
+        skyUniforms.topColor.value.setHex(0x1358be);
+        skyUniforms.midColor.value.setHex(0x4ea6ff);
+        skyUniforms.horizonColor.value.setHex(0xdaf0ff);
+        scene.fog.color.setHex(0xc8e3ff);
+        sunLight.color.setHex(0xfff4e0);
+        sunLight.intensity = 1.35;
+        timeDayBtn.className = 'px-2.5 py-1 rounded-xl text-xs font-semibold bg-sky-500 text-white shadow whitespace-nowrap transition';
+        timeSunsetBtn.className = 'px-2.5 py-1 rounded-xl text-xs font-semibold text-slate-200 hover:bg-white/10 whitespace-nowrap transition';
+        showToast('맑은 낮 하늘 모드입니다 ☀️');
+      });
+
+      timeSunsetBtn.addEventListener('click', () => {
+        skyUniforms.topColor.value.setHex(0x2e1f5e);
+        skyUniforms.midColor.value.setHex(0xd95b43);
+        skyUniforms.horizonColor.value.setHex(0xffc87c);
+        scene.fog.color.setHex(0xf3b28a);
+        sunLight.color.setHex(0xffa963);
+        sunLight.intensity = 1.15;
+        timeSunsetBtn.className = 'px-2.5 py-1 rounded-xl text-xs font-semibold bg-orange-500 text-white shadow whitespace-nowrap transition';
+        timeDayBtn.className = 'px-2.5 py-1 rounded-xl text-xs font-semibold text-slate-200 hover:bg-white/10 whitespace-nowrap transition';
+        showToast('따스한 노을 모드입니다 🌇');
+      });
+
+      // Sound Toggle
+      const soundBtn = document.getElementById('sound-toggle-btn');
+      soundBtn.addEventListener('click', () => {
+        initAudio();
+        soundEnabled = !soundEnabled;
+        soundBtn.textContent = soundEnabled ? '🔊 효과음 켜짐' : '🔇 효과음';
+        if (soundEnabled) {
+          playPopSound(660);
+          playChirp();
+          if (!birdTimer) {
+            birdTimer = setInterval(() => {
+              if (soundEnabled && Math.random() > 0.45) playChirp();
+            }, 3800);
+          }
+          showToast('가을 공원 새소리와 효과음이 켜졌습니다 🐦');
+        } else {
+          showToast('효과음이 꺼졌습니다');
+        }
+      });
+
+      // ==========================================
+      // 14. CAMERA ORBIT, PINCH-TO-ZOOM & CLICK-TO-WALK RAYCASTING
+      // ==========================================
+      let camYaw = 0; // 0 looks straight toward -Z (Tokyo Tower!)
+      let camPitch = 0.22;
+      let camDistance = 10.5;
+      const MIN_CAM_DIST = 2.8;
+      const MAX_CAM_DIST = 28.0;
+      const camLookTarget = new THREE.Vector3(0, 1.4, 6);
+
+      function clampZoom(dist) {
+        return Math.max(MIN_CAM_DIST, Math.min(MAX_CAM_DIST, dist));
+      }
+
+
+
+      document.getElementById('zoom-in-btn').addEventListener('click', () => {
+        camDistance = clampZoom(camDistance - 2.0);
+      });
+
+      document.getElementById('zoom-out-btn').addEventListener('click', () => {
+        camDistance = clampZoom(camDistance + 2.0);
+      });
+
+      // Multi-Pointer & Touch Pinch-to-Zoom State
+      const activePointers = new Map(); // pointerId -> { x, y }
+      let lastPinchDist = null;
+      let wasMultiTouch = false;
+      let isPointerDown = false;
+      let pointerDownPos = { x: 0, y: 0 };
+      let isDraggingCamera = false;
+
+      const raycaster = new THREE.Raycaster();
+      const mouseNDC = new THREE.Vector2();
+
+      function handleWorldTap(clientX, clientY) {
+        mouseNDC.x = (clientX / window.innerWidth) * 2 - 1;
+        mouseNDC.y = -(clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouseNDC, camera);
+
+        // 1. Check if user clicked a Park Bench
+        const benchHits = raycaster.intersectObjects(
+          interactiveBenches.map(b => b.hitBox),
+          false
+        );
+        if (benchHits.length > 0) {
+          const benchData = benchHits[0].object.userData.benchData;
+          if (benchData) {
+            walkToBench(benchData);
+            return;
+          }
+        }
+
+        // 2. Check if user clicked the Ground / Path / Picnic Mat
+        const groundHits = raycaster.intersectObjects(walkableMeshes, false);
+        if (groundHits.length > 0) {
+          const pt = groundHits[0].point;
+          const clampedX = Math.max(-45, Math.min(45, pt.x));
+          const clampedZ = Math.max(-44, Math.min(42, pt.z));
+
+          initAudio();
+          playPopSound(480);
+
+          playerState.pendingBench = null;
+          playerState.targetPos.set(clampedX, 0, clampedZ);
+          playerState.mode = 'walking';
+          updateActionButtonsUI();
+
+          clickMarkerGroup.position.set(clampedX, 0.05, clampedZ);
+          clickMarkerAlpha = 1.0;
+          broadcastMyState();
+        }
+      }
+
+      // Pointer Events (handles Mouse + Multi-Pointer Pinch Zoom)
+      renderer.domElement.addEventListener('pointerdown', e => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (activePointers.size === 1) {
+          isPointerDown = true;
+          isDraggingCamera = false;
+          wasMultiTouch = false;
+          pointerDownPos.x = e.clientX;
+          pointerDownPos.y = e.clientY;
+        } else if (activePointers.size >= 2) {
+          wasMultiTouch = true;
+          isDraggingCamera = true;
+          const pts = Array.from(activePointers.values());
+          lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        }
+      });
+
+      window.addEventListener('pointermove', e => {
+        if (activePointers.has(e.pointerId)) {
+          activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        }
+
+        // Two-finger Pinch-to-Zoom via PointerEvents
+        if (activePointers.size >= 2) {
+          const pts = Array.from(activePointers.values());
+          const curDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          if (lastPinchDist !== null && lastPinchDist > 5) {
+            const delta = lastPinchDist - curDist;
+            camDistance = clampZoom(camDistance + delta * 0.045);
+          }
+          lastPinchDist = curDist;
+          return;
+        }
+
+        if (isPointerDown && activePointers.size === 1 && !wasMultiTouch) {
+          const dx = e.clientX - pointerDownPos.x;
+          const dy = e.clientY - pointerDownPos.y;
+          if (Math.hypot(dx, dy) > 6) {
+            isDraggingCamera = true;
+            camYaw -= dx * 0.0065;
+            camPitch = Math.max(0.05, Math.min(1.05, camPitch + dy * 0.0055));
+            pointerDownPos.x = e.clientX;
+            pointerDownPos.y = e.clientY;
+          }
+          return;
+        }
+
+        // Hover cursor highlight for benches on desktop mouse
+        if (e.pointerType === 'mouse' && !isPointerDown) {
+          mouseNDC.x = (e.clientX / window.innerWidth) * 2 - 1;
+          mouseNDC.y = -(e.clientY / window.innerHeight) * 2 + 1;
+          raycaster.setFromCamera(mouseNDC, camera);
+          const benchHits = raycaster.intersectObjects(
+            interactiveBenches.map(b => b.hitBox),
+            false
+          );
+          renderer.domElement.style.cursor = benchHits.length > 0 ? 'pointer' : 'default';
+        }
+      });
+
+      function onPointerEnd(e) {
+        activePointers.delete(e.pointerId);
+        if (activePointers.size < 2) {
+          lastPinchDist = null;
+        }
+        if (activePointers.size === 0) {
+          if (isPointerDown && !isDraggingCamera && !wasMultiTouch) {
+            handleWorldTap(e.clientX, e.clientY);
+          }
+          isPointerDown = false;
+          isDraggingCamera = false;
+          wasMultiTouch = false;
+        }
+      }
+      window.addEventListener('pointerup', onPointerEnd);
+      window.addEventListener('pointercancel', onPointerEnd);
+
+      // Dedicated Touch Events Fallback for iOS/Android Safari/Chrome Two-Finger Pinch Zoom
+      let touchPinchDist = null;
+      renderer.domElement.addEventListener(
+        'touchstart',
+        e => {
+          if (e.touches.length >= 2) {
+            wasMultiTouch = true;
+            isDraggingCamera = true;
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            touchPinchDist = Math.hypot(dx, dy);
+          }
+        },
+        { passive: true }
+      );
+
+      renderer.domElement.addEventListener(
+        'touchmove',
+        e => {
+          if (e.touches.length >= 2) {
+            if (e.cancelable) e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const dist = Math.hypot(dx, dy);
+            if (touchPinchDist !== null && touchPinchDist > 5) {
+              const delta = touchPinchDist - dist;
+              camDistance = clampZoom(camDistance + delta * 0.045);
+            }
+            touchPinchDist = dist;
+          }
+        },
+        { passive: false }
+      );
+
+      renderer.domElement.addEventListener(
+        'touchend',
+        e => {
+          if (e.touches.length < 2) {
+            touchPinchDist = null;
+          }
+        },
+        { passive: true }
+      );
+
+      // Mouse Wheel & Laptop Trackpad Two-Finger Pinch (e.ctrlKey) Zoom
+      renderer.domElement.addEventListener(
+        'wheel',
+        e => {
+          if (e.cancelable) e.preventDefault();
+          const zoomSpeed = e.ctrlKey ? 0.045 : 0.012;
+          camDistance = clampZoom(camDistance + e.deltaY * zoomSpeed);
+        },
+        { passive: false }
+      );
+
+      // ==========================================
+      // 15. MULTIPLAYER SYSTEM (Real-Time Multi-Tab Sync + Virtual Visitors)
+      // ==========================================
+      const remotePlayers = new Map(); // id -> { rig, label, x, z, rotY, targetX, targetZ, mode, nickname, themeIdx, lastSeen, isSimulated }
+
+      function getOrCreateRemotePlayer(id, data) {
+        if (remotePlayers.has(id)) {
+          const rp = remotePlayers.get(id);
+          rp.targetX = data.x;
+          rp.targetZ = data.z;
+          rp.rotY = data.rotY;
+          rp.mode = data.mode || 'idle';
+          if (data.nickname && rp.nickname !== data.nickname) {
+            rp.nickname = data.nickname;
+            rp.label.nameSpan.textContent = data.nickname;
+          }
+          if (typeof data.themeIdx === 'number' && rp.themeIdx !== data.themeIdx) {
+            rp.themeIdx = data.themeIdx;
+            rp.rig.setTheme(data.themeIdx);
+          }
+          if (data.chat) {
+            rp.label.say(data.chat, 4500);
+          }
+          rp.lastSeen = performance.now();
+          return rp;
+        }
+
+        const rig = createCuteGirlCharacter(data.themeIdx || 1, data.hairColor || 0x3b2314);
+        rig.root.position.set(data.x || 0, 0, data.z || 0);
+        rig.root.rotation.y = data.rotY || 0;
+        scene.add(rig.root);
+
+        const badgeColor = data.isSimulated ? 'bg-sky-400' : 'bg-emerald-400';
+        const label = createFloatingLabel(data.nickname || '방문자', badgeColor);
+        if (data.chat) label.say(data.chat, 4500);
+
+        const rpObj = {
+          id,
+          rig,
+          label,
+          x: data.x || 0,
+          z: data.z || 0,
+          targetX: data.x || 0,
+          targetZ: data.z || 0,
+          rotY: data.rotY || 0,
+          mode: data.mode || 'idle',
+          nickname: data.nickname || '방문자',
+          themeIdx: data.themeIdx || 1,
+          lastSeen: performance.now(),
+          isSimulated: !!data.isSimulated,
+          aiTimer: Math.random() * 4
+        };
+        remotePlayers.set(id, rpObj);
+        renderPlayerRoster();
+        return rpObj;
+      }
+
+      // Real-time Cross-Tab Synchronization via BroadcastChannel + localStorage fallback
+      let channel = null;
+      try {
+        if ('BroadcastChannel' in window) {
+          channel = new BroadcastChannel('tokyo_autumn_park_3d_sync');
+          channel.onmessage = ev => {
+            const msg = ev.data;
+            if (msg && msg.id && msg.id !== myPlayerId) {
+              getOrCreateRemotePlayer(msg.id, msg);
+            }
+          };
+        }
+      } catch (e) {}
+
+      window.addEventListener('storage', ev => {
+        if (ev.key === 'tokyo_autumn_park_state' && ev.newValue) {
+          try {
+            const msg = JSON.parse(ev.newValue);
+            if (msg && msg.id && msg.id !== myPlayerId) {
+              getOrCreateRemotePlayer(msg.id, msg);
+            }
+          } catch (e) {}
+        }
+      });
+
+      function broadcastMyState(chatText = '') {
+        const payload = {
+          id: myPlayerId,
+          nickname: (nicknameInput.value.trim() || '가을소녀') + ' (실시간)',
+          x: myRig.root.position.x,
+          z: myRig.root.position.z,
+          rotY: myRig.root.rotation.y,
+          mode: playerState.mode,
+          themeIdx: myThemeIdx,
+          chat: chatText,
+          ts: Date.now()
+        };
+        try {
+          if (channel) channel.postMessage(payload);
+        } catch (e) {}
+        try {
+          localStorage.setItem('tokyo_autumn_park_state', JSON.stringify(payload));
+        } catch (e) {}
+      }
+
+      // Initialize Simulated Live Visitors so the user sees other characters right away
+      const initialVisitors = [
+        {
+          id: 'sim_visitor_1',
+          nickname: '도쿄산책러 소라',
+          x: -7.5,
+          z: -12.0,
+          rotY: 0.4,
+          mode: 'reading',
+          themeIdx: 2,
+          hairColor: 0x2b1d14,
+          isSimulated: true,
+          chat: '돗자리에서 책 읽기 딱 좋은 날씨네요 📖'
+        },
+        {
+          id: 'sim_visitor_2',
+          nickname: '단풍여행자 민지',
+          x: 5.5,
+          z: -2.0,
+          rotY: Math.PI,
+          mode: 'walking',
+          themeIdx: 4,
+          hairColor: 0x5c3317,
+          isSimulated: true,
+          chat: '도쿄타워 배경이 진짜 그림 같아요! 🗼🍂'
+        },
+        {
+          id: 'sim_visitor_3',
+          nickname: '하늘구름 지우',
+          x: 10.5,
+          z: 1.5,
+          rotY: 0,
+          mode: 'lying',
+          themeIdx: 1,
+          hairColor: 0x3d2314,
+          isSimulated: true,
+          chat: '잔디밭에 누워서 하늘 보니까 힐링된다 ☁️'
+        }
+      ];
+      initialVisitors.forEach(v => getOrCreateRemotePlayer(v.id, v));
+
+      const simChats = [
+        '단풍잎이 살랑살랑 떨어져요 🍂',
+        '도쿄타워 앞에서 같이 사진 찍어요! 📸',
+        '벤치에 앉아서 바라보는 풍경이 최고네요 🪑',
+        '파란 가을 하늘에 구름이 몽글몽글 예뻐요 ☁️',
+        '저기 강아지 산책하는 모습 너무 귀엽다 🐕'
+      ];
+
+      document.getElementById('spawn-visitor-btn').addEventListener('click', () => {
+        initAudio();
+        playPopSound(640);
+        const count = remotePlayers.size + 1;
+        const names = ['가을빛하은', '시바공원서연', '단풍소풍수아', '도쿄감성지원', '구름산책윤아'];
+        const id = 'sim_friend_' + Date.now();
+        const rx = (Math.random() - 0.5) * 18;
+        const rz = (Math.random() - 0.5) * 16;
+        const newVisitor = getOrCreateRemotePlayer(id, {
+          id,
+          nickname: names[count % names.length],
+          x: rx,
+          z: rz,
+          rotY: Math.PI,
+          mode: 'walking',
+          themeIdx: count % outfitThemes.length,
+          isSimulated: true,
+          chat: '안녕하세요! 같이 가을 공원 산책해요 👋🍂'
+        });
+        newVisitor.targetX = myRig.root.position.x + (Math.random() * 4 - 2);
+        newVisitor.targetZ = myRig.root.position.z + (Math.random() * 4 - 2);
+        showToast(`${newVisitor.nickname}님이 공원에 입장했습니다! 👥`);
+      });
+
+      function renderPlayerRoster() {
+        const rosterEl = document.getElementById('player-roster');
+        const badgeEl = document.getElementById('online-count-badge');
+        const total = 1 + remotePlayers.size;
+        if (badgeEl) badgeEl.textContent = `동시접속 ${total}명`;
+        if (!rosterEl) return;
+
+        const modeKo = {
+          idle: '산책 대기',
+          walking: '산책중 🚶‍♀️',
+          reading: '책읽는중 📖',
+          lying: '하늘보며 눕기 ☁️',
+          sitting_bench: '벤치 휴식 🪑'
+        };
+
+        let html = `
+          <li class="flex items-center justify-between bg-white/10 rounded-lg px-2.5 py-1.5">
+            <span class="font-bold text-orange-300 truncate">${nicknameInput.value.trim() || '가을소녀'} (나)</span>
+            <span class="text-[11px] text-slate-200">${modeKo[playerState.mode] || '산책중'}</span>
+          </li>
+        `;
+
+        remotePlayers.forEach(rp => {
+          html += `
+            <li class="flex items-center justify-between bg-white/5 rounded-lg px-2.5 py-1">
+              <span class="text-slate-100 truncate">${rp.nickname}</span>
+              <span class="text-[11px] text-emerald-300">${modeKo[rp.mode] || '산책중'}</span>
+            </li>
+          `;
+        });
+        rosterEl.innerHTML = html;
+      }
+      renderPlayerRoster();
+
+      // ==========================================
+      // 16. 3D TO 2D SCREEN PROJECTION FOR LABELS
+      // ==========================================
+      const tempProjVec = new THREE.Vector3();
+      const PROXIMITY_SHOW_DIST = 5.2; // Show NPC / visitor labels only when player character walks near them
+
+      function projectLabel(labelObj, worldPos, yOffset = 2.15, onlyWhenNearPlayer = false) {
+        if (onlyWhenNearPlayer) {
+          const distToPlayer = Math.hypot(
+            myRig.root.position.x - worldPos.x,
+            myRig.root.position.z - worldPos.z
+          );
+          if (distToPlayer > PROXIMITY_SHOW_DIST) {
+            labelObj.wrapper.style.opacity = '0';
+            return;
+          }
+        }
+
+        tempProjVec.copy(worldPos);
+        tempProjVec.y += yOffset;
+        tempProjVec.project(camera);
+
+        if (tempProjVec.z > 1.0) {
+          labelObj.wrapper.style.opacity = '0';
+          return;
+        }
+        const x = (tempProjVec.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-tempProjVec.y * 0.5 + 0.5) * window.innerHeight;
+        labelObj.wrapper.style.opacity = '1';
+        labelObj.wrapper.style.left = `${x}px`;
+        labelObj.wrapper.style.top = `${y}px`;
+      }
+
+      // ==========================================
+      // 17. MAIN ANIMATION LOOP
+      // ==========================================
+      const clock = new THREE.Clock();
+      let syncAccumulator = 0;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const dt = Math.min(clock.getDelta(), 0.1);
+        const elapsed = clock.getElapsedTime();
+
+        // 1. Drift Clouds across the Blue Sky
+        cloudsGroup.children.forEach(cloud => {
+          cloud.position.x += cloud.userData.speed * dt;
+          if (cloud.position.x > 190) cloud.position.x = -190;
+        });
+
+        // 2. Distant Traffic Cars moving smoothly in both directions
+        movingCars.forEach(car => {
+          car.mesh.position.x += car.dir * car.speed * dt;
+          if (car.dir > 0 && car.mesh.position.x > 165) {
+            car.mesh.position.x = -165;
+          } else if (car.dir < 0 && car.mesh.position.x < -165) {
+            car.mesh.position.x = 165;
+          }
+        });
+
+        // 3. Falling Autumn Leaves
+        leafMeshes.forEach(leaf => {
+          const u = leaf.userData;
+          leaf.position.y -= u.fallSpeed * dt;
+          leaf.position.x += Math.sin(elapsed * u.swaySpeed + u.swayOffset) * 0.6 * dt;
+          leaf.rotation.x += u.rotSpeed * dt;
+          leaf.rotation.z += u.rotSpeed * 0.7 * dt;
+          if (leaf.position.y < 0.05) {
+            leaf.position.y = 14 + Math.random() * 6;
+            leaf.position.x = (Math.random() - 0.5) * 85;
+          }
+        });
+
+        // 4. Blinking Tokyo Tower Aviation Lights
+        const beaconPulse = (Math.sin(elapsed * 3.5) + 1) * 0.5;
+        tokyoTowerLights.forEach(l => {
+          if (l.isMesh) {
+            l.scale.setScalar(0.85 + beaconPulse * 0.35);
+          }
+        });
+
+        // 5. Update Dog Walker NPC & Shiba Inu
+        dogWalkAngle += dt * 0.22;
+        const dwX = Math.sin(dogWalkAngle) * 14;
+        const dwZ = -14 + Math.cos(dogWalkAngle * 2) * 6.5;
+        const nextDwX = Math.sin(dogWalkAngle + 0.02) * 14;
+        const nextDwZ = -14 + Math.cos((dogWalkAngle + 0.02) * 2) * 6.5;
+        dogWalkerGroup.position.set(dwX, 0, dwZ);
+        dogWalkerGroup.rotation.y = Math.atan2(nextDwX - dwX, nextDwZ - dwZ);
+        updateCharacterPose(walkerRig, 'walking', elapsed);
+
+        // Animate Shiba Inu legs & wagging tail
+        dogLegs.forEach((leg, idx) => {
+          leg.rotation.x = Math.sin(elapsed * 12 + (idx % 2) * Math.PI) * 0.55;
+        });
+        dogTail.rotation.z = Math.sin(elapsed * 14) * 0.35;
+        projectLabel(dogWalkerLabel, dogWalkerGroup.position, 2.2, true);
+
+        // 6. Animate Bento Picnickers (eating chopsticks gesture)
+        bentoEater1.rightArm.rotation.x = -1.1 + Math.sin(elapsed * 3.2) * 0.35;
+        bentoEater1.headGroup.rotation.x = 0.15 + Math.sin(elapsed * 3.2) * 0.08;
+        bentoEater2.rightArm.rotation.x = -1.1 + Math.cos(elapsed * 2.8) * 0.35;
+        bentoEater2.headGroup.rotation.x = 0.15 + Math.cos(elapsed * 2.8) * 0.08;
+        projectLabel(bentoLabel, bentoGroup.position, 1.85, true);
+
+        // 7. Update Main Player Movement & Posture
+        if (playerState.mode === 'walking') {
+          const cur = myRig.root.position;
+          const dx = playerState.targetPos.x - cur.x;
+          const dz = playerState.targetPos.z - cur.z;
+          const dist = Math.hypot(dx, dz);
+
+          if (dist > 0.12) {
+            const step = Math.min(dist, playerState.moveSpeed * dt);
+            cur.x += (dx / dist) * step;
+            cur.z += (dz / dist) * step;
+            const targetAngle = Math.atan2(dx, dz);
+            // Smooth rotation interpolation
+            let diff = targetAngle - myRig.root.rotation.y;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            myRig.root.rotation.y += diff * Math.min(1, dt * 10);
+          } else {
+            cur.x = playerState.targetPos.x;
+            cur.z = playerState.targetPos.z;
+            if (playerState.pendingBench) {
+              myRig.root.rotation.y = playerState.pendingBench.sitRotY;
+              playerState.mode = 'sitting_bench';
+              playerState.pendingBench = null;
+              updateActionButtonsUI();
+              myLabel.say('벤치에 앉아 도쿄타워와 가을 숲을 감상중 🪑🍂', 4000);
+              broadcastMyState();
+              renderPlayerRoster();
+            } else {
+              playerState.mode = 'idle';
+              updateActionButtonsUI();
+              broadcastMyState();
+              renderPlayerRoster();
+            }
+          }
+        }
+
+        updateCharacterPose(myRig, playerState.mode, elapsed);
+        const myYOffset = playerState.mode === 'lying' ? 1.05 : playerState.mode === 'reading' || playerState.mode === 'sitting_bench' ? 1.65 : 2.15;
+        projectLabel(myLabel, myRig.root.position, myYOffset);
+
+        // Ground Click Ring Fade
+        if (clickMarkerAlpha > 0) {
+          clickMarkerAlpha = Math.max(0, clickMarkerAlpha - dt * 1.4);
+          clickRing.material.opacity = clickMarkerAlpha;
+          const s = 1 + (1 - clickMarkerAlpha) * 0.9;
+          clickRing.scale.set(s, s, 1);
+        }
+
+        // 8. Update Remote & Simulated Multiplayer Characters
+        remotePlayers.forEach(rp => {
+          if (rp.isSimulated) {
+            rp.aiTimer -= dt;
+            if (rp.aiTimer <= 0) {
+              rp.aiTimer = 5 + Math.random() * 6;
+              const rand = Math.random();
+              if (rand < 0.42) {
+                rp.mode = 'walking';
+                rp.targetX = (Math.random() - 0.5) * 22;
+                rp.targetZ = -18 + Math.random() * 24;
+              } else if (rand < 0.68) {
+                rp.mode = 'reading';
+              } else if (rand < 0.88) {
+                rp.mode = 'lying';
+              } else {
+                rp.mode = 'idle';
+              }
+              if (Math.random() < 0.35) {
+                rp.label.say(simChats[Math.floor(Math.random() * simChats.length)], 4000);
+              }
+              renderPlayerRoster();
+            }
+          }
+
+          const rCur = rp.rig.root.position;
+          const rdx = rp.targetX - rCur.x;
+          const rdz = rp.targetZ - rCur.z;
+          const rDist = Math.hypot(rdx, rdz);
+          if (rDist > 0.12) {
+            const step = Math.min(rDist, 4.2 * dt);
+            rCur.x += (rdx / rDist) * step;
+            rCur.z += (rdz / rDist) * step;
+            rp.rig.root.rotation.y = Math.atan2(rdx, rdz);
+            if (rp.isSimulated) rp.mode = 'walking';
+          } else if (rp.isSimulated && rp.mode === 'walking') {
+            rp.mode = 'idle';
+          }
+
+          updateCharacterPose(rp.rig, rp.mode, elapsed + rp.themeIdx);
+          const rpYOffset = rp.mode === 'lying' ? 1.05 : rp.mode === 'reading' || rp.mode === 'sitting_bench' ? 1.65 : 2.15;
+          projectLabel(rp.label, rCur, rpYOffset, true);
+        });
+
+        // Periodic heartbeat broadcast for real multi-tab sync
+        syncAccumulator += dt;
+        if (syncAccumulator > 0.25) {
+          syncAccumulator = 0;
+          if (playerState.mode === 'walking') broadcastMyState();
+        }
+
+        // 9. Smooth Third-Person Camera Follow
+        const targetFollowY = playerState.mode === 'lying' ? 0.8 : 1.5;
+        camLookTarget.lerp(
+          new THREE.Vector3(myRig.root.position.x, targetFollowY, myRig.root.position.z - 1.5),
+          Math.min(1, dt * 6)
+        );
+        const camX = camLookTarget.x + Math.sin(camYaw) * Math.cos(camPitch) * camDistance;
+        const camY = Math.max(1.2, camLookTarget.y + Math.sin(camPitch) * camDistance);
+        const camZ = camLookTarget.z + Math.cos(camYaw) * Math.cos(camPitch) * camDistance;
+        camera.position.set(camX, camY, camZ);
+        camera.lookAt(camLookTarget);
+
+        renderer.render(scene, camera);
+      }
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      window.onload = () => {
+        broadcastMyState();
+        animate();
+      };
+    })();
+  </script>
+</body>
+</html>
